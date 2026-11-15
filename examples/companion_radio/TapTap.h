@@ -17,7 +17,8 @@
 #define TAPTAP_CW_WPM_DEFAULT 19
 #define TAPTAP_CW_WPM_MIN     1
 #define TAPTAP_CW_WPM_MAX     40
-#define TAPTAP_SLOT_MS_DEFAULT 500
+#define TAPTAP_SLOT_MS_DEFAULT 500        // LED dash length
+#define TAPTAP_SLOT_BEEP_MS_DEFAULT 200   // buzzer beep length
 #define TAPTAP_SLOT_MS_MIN     50
 #define TAPTAP_SLOT_MS_MAX     2000
 
@@ -27,7 +28,7 @@ enum TapBuzMode : uint8_t {
   TAP_BUZ_OFF   = 2,
 };
 
-// led_flags bits (a set bit turns the feature OFF, so 0 = default)
+// led_flags bits (a set bit turns the feature OFF)
 #define TAP_LED_NO_STANDBY  0x01   // no heartbeat / messages-waiting blink when idle
 
 enum TapTargetType : uint8_t {
@@ -46,7 +47,7 @@ struct TapTapSettings {
   uint8_t  version;
   uint8_t  buz_mode;      // TapBuzMode
   uint8_t  canned_count;
-  uint8_t  led_flags;     // TAP_LED_* bits; 0 = defaults (all LED features on)
+  uint8_t  led_flags;     // TAP_LED_* bits (default: TAP_LED_NO_STANDBY)
   char     canned[TAPTAP_MAX_CANNED][TAPTAP_CANNED_LEN];
   char     ringtone[TAPTAP_RINGTONE_LEN];   // global message ringtone, "" = firmware default
   TapTarget target;
@@ -95,6 +96,6 @@ namespace taptap {
   //  buzzer: equal-length beeps, high tone = 1, low tone = 0, gaps beep_ms/2
   //  LED:    1 = dash (flash_ms), 0 = dot (flash_ms/2), gaps flash_ms/2
   // 'out' >= 64 bytes each.
-  void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_MS_DEFAULT);
+  void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_BEEP_MS_DEFAULT);
   void buildSlotFlashes(int idx, char* out, size_t out_len, int flash_ms = TAPTAP_SLOT_MS_DEFAULT);
 }

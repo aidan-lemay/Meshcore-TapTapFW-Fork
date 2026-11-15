@@ -14,6 +14,7 @@ static void test_taptap_and_player() {
   assert(taptap::buildCwRtttl("!!!", buf, sizeof buf)==0);
   char tiny[40]; int n=taptap::buildCwRtttl("hello world", tiny, sizeof tiny); printf("CW tiny(%d): %s\n", n, tiny); assert(n<40);
   TapTapSettings st; st.setDefaults(); assert(st.isValid());
+  assert(st.buz_mode == TAP_BUZ_CW && st.repeat_alert == 1 && (st.led_flags & TAP_LED_NO_STANDBY) && st.slot_beep_ms == 200 && st.slot_flash_ms == 500);
   assert(taptap::parseCannedList(" hi | yes||no ", st)==3);
   printf("canned: [%s][%s][%s] count=%d\n", st.canned[0], st.canned[1], st.canned[2], st.canned_count);
   assert(taptap::parseCannedList(" | ", st)==0 && st.canned_count==3);
@@ -45,7 +46,7 @@ static void test_taptap_and_player() {
   {
     TapPlayer q; q.begin(25, 37, 24, true);
     char beeps[80], flashes[80];
-    taptap::buildSlotBeeps(5, beeps, sizeof beeps);
+    taptap::buildSlotBeeps(5, beeps, sizeof beeps, 500);
     taptap::buildSlotFlashes(5, flashes, sizeof flashes);
     g_ms = 20000; q.play(beeps, flashes);
     int lit = 0, sounding = 0, total = 0, led_off_at = -1, first = g_freq, low = 0;
@@ -68,7 +69,9 @@ static void test_taptap_and_player() {
     g_ms = 25000; q.play(beeps, flashes);   // LED 000 at 1000: 3*500 + 2*500 = 2500ms
     int t = 0, lit = 0; while (q.isPlaying()) { if (g_led) lit++; g_ms++; q.loop(); t++; }
     printf("slot beeps 200 / flashes 1000: %dms, lit %d\n", t, lit); assert(t == 2500 && lit == 1500);
-    taptap::buildSlotBeeps(0, beeps, sizeof beeps, 9999); assert(strstr(beeps, "b=120:"));   // out of range -> default
+    taptap::buildSlotBeeps(0, beeps, sizeof beeps, 9999); assert(strstr(beeps, "b=300:"));   // out of range -> 200ms default
+    taptap::buildSlotFlashes(0, flashes, sizeof flashes, 9999); assert(strstr(flashes, "b=120:"));   // -> 500ms default
+    taptap::buildSlotFlashes(0, flashes, sizeof flashes, 1000);
     // muted: buzzer silent, LED still follows its own track
     q.setQuiet(true); g_ms = 30000; q.play(beeps, flashes);
     int heard = 0; lit = 0; while (q.isPlaying()) { if (g_freq) heard++; if (g_led) lit++; g_ms++; q.loop(); }
@@ -86,7 +89,7 @@ static void test_taptap_and_player() {
   // older (shorter) settings: fields past the end keep defaults; sanitise fixes junk
   {
     TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.slot_beep_ms = 7; s2.slot_flash_ms = 0; s2.sanitise();
-    assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_MS_DEFAULT && s2.slot_flash_ms == TAPTAP_SLOT_MS_DEFAULT);
+    assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_BEEP_MS_DEFAULT && s2.slot_flash_ms == TAPTAP_SLOT_MS_DEFAULT);
   }
 
 }

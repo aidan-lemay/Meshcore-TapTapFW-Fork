@@ -87,7 +87,7 @@ There are up to **8** preset messages. The defaults are:
 1. **2 clicks** to enter canned mode (rising three-note chirp).
 2. **1 click** steps to the next message. The device shows the slot number as 3 binary digits,
    with the buzzer and the LED each using their own timing:
-   - **Buzzer:** equal-length beeps, **high = 1, low = 0** (0.5 s each, 0.25 s gaps by default)
+   - **Buzzer:** equal-length beeps, **high = 1, low = 0** (0.2 s each, 0.1 s gaps by default)
    - **LED:** **1 = dash** (0.5 s), **0 = dot** (0.25 s), dot-length gaps, so it can be read with the buzzer muted
 
    So slot 6 (`101`) sounds high-low-high and flashes dash-dot-dash. The two start together, but each
@@ -125,8 +125,8 @@ When a direct message or channel message arrives, the device alerts in the curre
 
 | Mode | What you hear |
 |---|---|
-| `rtttl` *(default)* | Your custom ringtone (`/rtttl`), or the built-in message chirp |
-| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played) |
+| `rtttl` | Your custom ringtone (`/rtttl`), or the built-in message chirp |
+| `cw` *(default)* | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played) |
 | `off` | No alert |
 
 In `rtttl` and `cw` modes, a message that **matches one of your canned messages** (ignoring case and
@@ -139,7 +139,7 @@ it with the button. So "All good" is low-low-low with three short flashes. The s
 - **3 clicks replays the last received message**, at any time. Replay always plays the *content*,
   whatever `/buz` is set to: the slot pattern if it matches a canned message, otherwise Morse.
   It doesn't start a repeat-until-ack cycle. If nothing has been received since power-on, you get the error buzz.
-- **Repeat until acknowledged** (`/rep on`): the alert repeats every *N* seconds (default 5)
+- **Repeat until acknowledged** (on by default; `/rep off` to disable): the alert repeats every *N* seconds (default 5)
   until you **single-click**. Reading the message in the app doesn't stop it, because the app downloads
   messages as soon as they arrive.
 - If the same text arrives again within 30 s (resends, or the same message on several routes), it only alerts once.
@@ -173,16 +173,16 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/cw` | Show the CW alert speed |
 | `/cw <wpm>` | Set the CW alert speed, 1–40 words per minute (dit = 1200 / wpm ms: 19 → 63 ms, 12 → 100 ms, 2 → 600 ms) |
 | `/slot` | Show the slot pattern timing |
-| `/slot beep <ms>` | Buzzer beep length for the slot pattern, 50–2000 ms (all beeps equal; gaps are half). Default 500 |
+| `/slot beep <ms>` | Buzzer beep length for the slot pattern, 50–2000 ms (all beeps equal; gaps are half). Default 200 |
 | `/slot flash <ms>` | LED **dash** length for the slot pattern, 50–2000 ms (dots and gaps are half). Default 500 |
 | `/slot <ms>` | Set both at once. Used both when picking a canned message and when an incoming message matches one |
 | `/led` | Show LED settings |
-| `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off. When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
+| `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off (**off** by default). When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
 The default tap target is the **Public** channel. A channel target follows the channel if you
 re-order channels in the app. If the channel or contact is deleted, sending fails with the error buzz.
 
-All of these settings are saved on the device and survive reboots.
+All of these settings are saved on the device and survive reboots. Updating the firmware keeps your saved settings. New defaults only apply to a device that has never saved TapTap settings; otherwise set them with the commands above.
 
 ---
 
@@ -203,9 +203,9 @@ All of these settings are saved on the device and survive reboots.
 | Acknowledge alert | very short high tick |
 | Power off | falling three notes |
 
-The green LED lights for every note above (the slot pattern flashes on its own dot/dash timing). When nothing is playing it shows a heartbeat:
-a short blink every 4 s, or a longer blink when messages are waiting or an alert is pending.
-Turn the heartbeat off with `/led standby off` if it gets in the way of reading messages on the LED.
+The green LED lights for every note above (the slot pattern flashes on its own dot/dash timing).
+Otherwise it stays dark by default, so any flash means a tone or a message. `/led standby on` adds an idle
+heartbeat: a short blink every 4 s, or a longer blink when messages are waiting or an alert is pending.
 
 **Charging light:** the firmware never drives the LED for charging (the charge-detect pin is not
 used). Any light you see while charging comes from the device's charging circuit, so it can't be
