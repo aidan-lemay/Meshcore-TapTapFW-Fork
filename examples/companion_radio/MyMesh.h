@@ -227,6 +227,8 @@ public:
   void saveTapTap();
   bool sendTapMessage(const char* text);              // send to the configured tap target
   void describeTapTarget(char* dest, size_t len);     // "Name (channel|device)" or "unavailable"
+  bool tapTargetSpec(char* dest, size_t len);         // "ch:<name>" / "dev:<hex pubkey>" for /export
+  bool applyTapTargetSpec(const char* spec);          // inverse, for /import
 #endif
 
 private:

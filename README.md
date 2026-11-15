@@ -125,14 +125,18 @@ When a direct message or channel message arrives, the device alerts in the curre
 
 | Mode | What you hear |
 |---|---|
-| `rtttl` | Your custom ringtone (`/rtttl`), or the built-in message chirp |
-| `cw` *(default)* | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played) |
+| `cwmatch` *(default)* | Canned match: the slot pattern. Anything else: the text in **Morse code** |
+| `cw` | Always the text in Morse code, no table check |
+| `rtttlmatch` | Canned match: the slot pattern. Anything else: your ringtone |
+| `rtttl` | Always your custom ringtone (`/rtttl`), or the built-in message chirp |
 | `off` | No alert |
 
-In `rtttl` and `cw` modes, a message that **matches one of your canned messages** (ignoring case and
-surrounding spaces) plays that slot's **3-bit pattern** instead, the same one you hear and see when picking
-it with the button. So "All good" is low-low-low with three short flashes. The spelled-out Morse speed
-(`/cw`) and the slot pattern timing (`/slot`) are separate settings.
+A **canned match** means the message text equals one of your canned messages (ignoring case and
+surrounding spaces). It plays that slot's **3-bit pattern**, the same one you hear and see when picking it
+with the button, so "All good" is low-low-low with three short flashes.
+
+Morse is played at 19 WPM by default (`/cw`) and the sender name is not played. The Morse speed (`/cw`)
+and the slot pattern timing (`/slot`) are separate settings.
 
 - **Alerts play even while the app is connected.**
 - **The LED flashes with every note** (for slot patterns, with its own dot/dash timing), so alerts are visible when muted (4 clicks).
@@ -162,7 +166,7 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/tap` | Show the current tap target (where button-sent messages go) |
 | `/tap here` | Make **this channel**, or **this contact** if typed in a direct chat, the tap target |
 | `/buz` | Show the buzzer mode |
-| `/buz rtttl\|cw\|off` | Set the alert style ([Receiving](#receiving-alerts)) |
+| `/buz cwmatch\|cw\|rtttlmatch\|rtttl\|off` | Set the alert style ([Receiving](#receiving-alerts)) |
 | `/rtttl` | Show the custom ringtone (`/ringtone` also works) |
 | `/rtttl <rtttl>` | Set the ringtone, e.g. `/rtttl d=8,o=6,b=180:c,e,g` or a full `Name:d=4,o=5,b=120:…` |
 | `/rtttl clear` | Go back to the built-in tones |
@@ -179,10 +183,45 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/led` | Show LED settings |
 | `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off (**off** by default). When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
+| `/show` | List every setting (and the canned messages) |
+| `/export` | Reply with your settings as a few `/import …` lines |
+| `/import k=v;k=v;…` | Apply settings (see [Backup and transfer](#backup-and-transfer)) |
+| `/reset` | Restore default settings, **keeping** your canned messages and tap target |
+| `/reset all` | Restore **everything** to defaults, including canned messages and tap target |
+
 The default tap target is the **Public** channel. A channel target follows the channel if you
 re-order channels in the app. If the channel or contact is deleted, sending fails with the error buzz.
 
 All of these settings are saved on the device and survive reboots. Updating the firmware keeps your saved settings. New defaults only apply to a device that has never saved TapTap settings; otherwise set them with the commands above.
+
+### Backup and transfer
+
+`/export` replies with a few lines that each start with `/import` (the defaults export as the three lines below). Each line is at most 120 characters, so it fits in one message.
+To restore them (later, after `/reset all`, or on another device), **copy each line into a message and
+send it**, one at a time. They can be sent in any order, except that a line starting with `rt+=` or
+`m<N>+=` continues the line before it.
+
+```
+/import buz=cwmatch;rep=on;gap=5;cw=19;beep=200;flash=500;led=off;tap=ch:Public;rt=;msgs=8;m1=All good;m2=Stop and wait
+/import m3=Need assistance;m4=Emergency, send help;m5=Found water;m6=Returning to camp;m7=Running behind
+/import m8=Found the point
+```
+
+| Key | Value |
+|---|---|
+| `buz` | `cwmatch`, `cw`, `rtttlmatch`, `rtttl` or `off` |
+| `rep` / `gap` | `on`/`off`; repeat gap 1–255 s |
+| `cw` | Morse speed, 1–40 WPM |
+| `beep` / `flash` | slot beep length / LED dash length, 50–2000 ms |
+| `led` | standby blink `on`/`off` |
+| `tap` | `ch:<channel name>` or `dev:<contact public key in hex>`. The channel or contact must exist on the device |
+| `rt` / `rt+=` | ringtone (empty = default); `rt+=` appends the next part of a long one |
+| `msgs` | number of canned messages (0–8). Slots after it are cleared |
+| `m1`…`m8` / `m<N>+=` | canned message text; `+=` appends the next part of a long one. Fill slots in order |
+
+A `;` or `\` inside a value is written as `\;` or `\\`. You can also type your own `/import` lines with
+just the keys you want to change, e.g. `/import cw=12;beep=300`. The reply says how many settings were
+applied and names the first one that failed.
 
 ---
 
@@ -285,7 +324,8 @@ New in this edition:
 - **LED mirrors all sounds**, so it works silently.
 - **Repeat-until-acknowledged alerts** (`/rep`).
 - **Alerts while the app is connected**.
-- `/rep`, `/rtttl clear`, `/msg ?`, and channel targets that follow re-ordered channels.
+- `/rep`, `/rtttl clear`, `/msg ?`, `/show`, `/export` / `/import`, `/reset`, and channel targets that follow re-ordered channels.
+- Separate `cwmatch` / `cw` / `rtttlmatch` / `rtttl` alert modes.
 - Built on MeshCore **v1.18.0**.
 
 Behaviour kept from TapTap: the button map for advert, canned mode, Morse mode and power off; the

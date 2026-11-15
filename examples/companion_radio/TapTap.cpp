@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char* const DEFAULT_CANNED[TAPTAP_MAX_CANNED] = {
   "All good",
@@ -19,7 +20,7 @@ void TapTapSettings::setDefaults() {
   memset(this, 0, sizeof(*this));
   magic = MAGIC;
   version = VERSION;
-  buz_mode = TAP_BUZ_CW;
+  buz_mode = TAP_BUZ_CWMATCH;
   led_flags = TAP_LED_NO_STANDBY;   // LED only lights for tones/alerts
   canned_count = TAPTAP_MAX_CANNED;
   for (int i = 0; i < TAPTAP_MAX_CANNED; i++) {
@@ -43,8 +44,19 @@ void TapTapSettings::sanitise() {
   ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
 }
 
+void TapTapSettings::resetKeepMessages() {
+  char keep_canned[TAPTAP_MAX_CANNED][TAPTAP_CANNED_LEN];
+  uint8_t keep_count = canned_count;
+  TapTarget keep_target = target;
+  memcpy(keep_canned, canned, sizeof(canned));
+  setDefaults();
+  memcpy(canned, keep_canned, sizeof(canned));
+  canned_count = keep_count;
+  target = keep_target;
+}
+
 bool TapTapSettings::isValid() const {
-  return magic == MAGIC && version == VERSION && buz_mode <= TAP_BUZ_OFF &&
+  return magic == MAGIC && version == VERSION && buz_mode <= TAP_BUZ_RTTTLMATCH &&
          canned_count <= TAPTAP_MAX_CANNED && target.type <= TAP_TARGET_CONTACT;
 }
 
@@ -52,15 +64,20 @@ namespace taptap {
 
 const char* buzModeName(uint8_t mode) {
   switch (mode) {
-    case TAP_BUZ_RTTTL: return "rtttl";
-    case TAP_BUZ_CW:    return "cw";
-    case TAP_BUZ_OFF:   return "off";
+    case TAP_BUZ_RTTTL:   return "rtttl";
+    case TAP_BUZ_CWMATCH: return "cwmatch";
+    case TAP_BUZ_CW:      return "cw";
+    case TAP_BUZ_RTTTLMATCH: return "rtttlmatch";
+    case TAP_BUZ_OFF:     return "off";
     default:            return "unknown";
   }
 }
 
 bool parseBuzMode(const char* s, uint8_t& mode) {
+  while (*s == ' ') s++;
   if (strcasecmp(s, "rtttl") == 0 || strcasecmp(s, "tune") == 0) { mode = TAP_BUZ_RTTTL; return true; }
+  if (strcasecmp(s, "rtttlmatch") == 0 || strcasecmp(s, "tunematch") == 0) { mode = TAP_BUZ_RTTTLMATCH; return true; }
+  if (strcasecmp(s, "cwmatch") == 0 || strcasecmp(s, "match") == 0) { mode = TAP_BUZ_CWMATCH; return true; }
   if (strcasecmp(s, "cw") == 0 || strcasecmp(s, "morse") == 0)  { mode = TAP_BUZ_CW; return true; }
   if (strcasecmp(s, "off") == 0 || strcasecmp(s, "none") == 0)  { mode = TAP_BUZ_OFF; return true; }
   return false;
@@ -240,6 +257,190 @@ void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms) {
 
 void buildSlotFlashes(int idx, char* out, size_t out_len, int flash_ms) {
   buildSlot(idx, out, out_len, flash_ms, TAPTAP_SLOT_MS_DEFAULT, "4a6", "8a6");   // dash / dot (pitch unused: LED only)
+}
+
+void escapeValue(const char* in, char* out, size_t out_len) {
+  size_t o = 0;
+  for (; *in && o + 1 < out_len; in++) {
+    if (*in == ';' || *in == '\\') {
+      if (o + 2 >= out_len) break;
+      out[o++] = '\\';
+    }
+    out[o++] = *in;
+  }
+  out[o] = 0;
+}
+
+// appends "k=v" to the current line, starting a new "/import " line if it won't fit
+static void addPair(char lines[][TAPTAP_EXPORT_LINE], int max_lines, int& n, const char* pair) {
+  static const char PREFIX[] = "/import ";
+  size_t plen = strlen(pair);
+  if (n > 0) {
+    size_t cur = strlen(lines[n - 1]);
+    if (cur + 1 + plen < TAPTAP_EXPORT_LINE) {
+      lines[n - 1][cur] = ';';
+      memcpy(&lines[n - 1][cur + 1], pair, plen + 1);
+      return;
+    }
+  }
+  if (n >= max_lines) return;
+  snprintf(lines[n], TAPTAP_EXPORT_LINE, "%s%s", PREFIX, pair);
+  n++;
+}
+
+// adds key=value, splitting long values into key=<part>;key+=<part>... (each part escaped separately)
+static void addChunked(char lines[][TAPTAP_EXPORT_LINE], int max_lines, int& n, const char* key, const char* value) {
+  const size_t CHUNK = 50;   // raw chars per part: escaped <= 100, so a part always fits a line
+  char pair[TAPTAP_EXPORT_LINE * 2];
+  char raw[CHUNK + 1];
+  char esc[CHUNK * 2 + 1];
+  bool first = true;
+  do {
+    size_t len = strlen(value);
+    if (len > CHUNK) len = CHUNK;
+    memcpy(raw, value, len);
+    raw[len] = 0;
+    escapeValue(raw, esc, sizeof(esc));
+    snprintf(pair, sizeof(pair), "%s%s%s", key, first ? "=" : "+=", esc);
+    addPair(lines, max_lines, n, pair);
+    value += len;
+    first = false;
+  } while (*value);
+}
+
+int exportSettings(const TapTapSettings& st, const char* tap_spec, char lines[][TAPTAP_EXPORT_LINE], int max_lines) {
+  int n = 0;
+  char pair[TAPTAP_EXPORT_LINE];
+
+  snprintf(pair, sizeof(pair), "buz=%s", buzModeName(st.buz_mode));                 addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "rep=%s", st.repeat_alert ? "on" : "off");           addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "gap=%u", st.repeat_gap_secs);                       addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "cw=%u", st.cw_wpm);                                 addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "beep=%u", st.slot_beep_ms);                         addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "flash=%u", st.slot_flash_ms);                       addPair(lines, max_lines, n, pair);
+  snprintf(pair, sizeof(pair), "led=%s", (st.led_flags & TAP_LED_NO_STANDBY) ? "off" : "on"); addPair(lines, max_lines, n, pair);
+  if (tap_spec && *tap_spec) {   // never split: "ch:<31 chars>" escaped or "dev:<64 hex>" always fits a line
+    char esc[80];
+    char tp[96];
+    escapeValue(tap_spec, esc, sizeof(esc));
+    snprintf(tp, sizeof(tp), "tap=%s", esc);
+    addPair(lines, max_lines, n, tp);
+  }
+  addChunked(lines, max_lines, n, "rt", st.ringtone);   // "rt=" alone = default ringtone
+
+  snprintf(pair, sizeof(pair), "msgs=%u", st.canned_count);
+  addPair(lines, max_lines, n, pair);
+  for (int k = 0; k < st.canned_count; k++) {
+    char key[8];
+    snprintf(key, sizeof(key), "m%d", k + 1);
+    addChunked(lines, max_lines, n, key, st.canned[k]);
+  }
+  return n;
+}
+
+static void setError(ImportResult& r, const char* key) {
+  if (r.errors++ == 0) snprintf(r.first_error, sizeof(r.first_error), "%s", key);
+}
+
+static bool parseOnOff(const char* v, uint8_t& out) {
+  if (strcasecmp(v, "on") == 0 || strcmp(v, "1") == 0) { out = 1; return true; }
+  if (strcasecmp(v, "off") == 0 || strcmp(v, "0") == 0) { out = 0; return true; }
+  return false;
+}
+
+static bool parseRange(const char* v, int lo, int hi, int& out) {
+  if (*v == 0) return false;
+  char* end;
+  long x = strtol(v, &end, 10);
+  if (*end != 0 || x < lo || x > hi) return false;
+  out = (int)x;
+  return true;
+}
+
+ImportResult importSettings(const char* text, TapTapSettings& st,
+                            bool (*tap_handler)(const char* value, void* ctx), void* ctx) {
+  ImportResult res;
+  const char* p = text;
+  while (*p) {
+    while (*p == ' ' || *p == ';') p++;
+    if (*p == 0) break;
+
+    char key[12];
+    size_t kl = 0;
+    while (*p && *p != '=' && *p != ';' && kl < sizeof(key) - 1) key[kl++] = *p++;
+    key[kl] = 0;
+    bool append = kl > 0 && key[kl - 1] == '+';
+    if (append) key[--kl] = 0;
+
+    char val[TAPTAP_RINGTONE_LEN];
+    size_t vl = 0;
+    bool has_eq = (*p == '=');
+    if (has_eq) {
+      p++;
+      while (*p && *p != ';') {
+        if (*p == '\\' && p[1]) p++;
+        if (vl < sizeof(val) - 1) val[vl++] = *p;
+        p++;
+      }
+    } else {
+      while (*p && *p != ';') p++;   // skip junk
+    }
+    val[vl] = 0;
+    if (!has_eq || kl == 0) { setError(res, kl ? key : "?"); continue; }
+
+    bool ok = true;
+    int x;
+    if (strcmp(key, "buz") == 0)        ok = parseBuzMode(val, st.buz_mode);
+    else if (strcmp(key, "rep") == 0)   ok = parseOnOff(val, st.repeat_alert);
+    else if (strcmp(key, "gap") == 0)   { ok = parseRange(val, 1, 255, x); if (ok) st.repeat_gap_secs = x; }
+    else if (strcmp(key, "cw") == 0)    { ok = parseRange(val, TAPTAP_CW_WPM_MIN, TAPTAP_CW_WPM_MAX, x); if (ok) st.cw_wpm = x; }
+    else if (strcmp(key, "beep") == 0)  { ok = parseRange(val, TAPTAP_SLOT_MS_MIN, TAPTAP_SLOT_MS_MAX, x); if (ok) st.slot_beep_ms = x; }
+    else if (strcmp(key, "flash") == 0) { ok = parseRange(val, TAPTAP_SLOT_MS_MIN, TAPTAP_SLOT_MS_MAX, x); if (ok) st.slot_flash_ms = x; }
+    else if (strcmp(key, "led") == 0) {
+      uint8_t on;
+      ok = parseOnOff(val, on);
+      if (ok) { if (on) st.led_flags &= ~TAP_LED_NO_STANDBY; else st.led_flags |= TAP_LED_NO_STANDBY; }
+    }
+    else if (strcmp(key, "rt") == 0) {
+      if (append) {
+        size_t cur = strlen(st.ringtone);
+        ok = cur + vl < sizeof(st.ringtone);
+        if (ok) memcpy(&st.ringtone[cur], val, vl + 1);
+      } else if (vl == 0) {
+        st.ringtone[0] = 0;
+      } else {
+        ok = vl < sizeof(st.ringtone);
+        if (ok) memcpy(st.ringtone, val, vl + 1);   // validated as RTTTL by the caller once complete
+      }
+    }
+    else if (strcmp(key, "msgs") == 0) {
+      ok = parseRange(val, 0, TAPTAP_MAX_CANNED, x);
+      if (ok) {
+        for (int k = x; k < TAPTAP_MAX_CANNED; k++) st.canned[k][0] = 0;
+        st.canned_count = x;
+      }
+    }
+    else if (key[0] == 'm' && key[1] >= '1' && key[1] <= '0' + TAPTAP_MAX_CANNED && key[2] == 0) {
+      int slot = key[1] - '1';
+      if (append) {
+        size_t cur = slot < st.canned_count ? strlen(st.canned[slot]) : 0;
+        ok = slot < st.canned_count && cur + vl < TAPTAP_CANNED_LEN;
+        if (ok) memcpy(&st.canned[slot][cur], val, vl + 1);
+      } else {
+        ok = vl > 0 && vl < TAPTAP_CANNED_LEN && slot <= st.canned_count;   // fill slots in order
+        if (ok) {
+          memcpy(st.canned[slot], val, vl + 1);
+          if (slot == st.canned_count) st.canned_count = slot + 1;
+        }
+      }
+    }
+    else if (strcmp(key, "tap") == 0)   ok = !append && tap_handler && tap_handler(val, ctx);
+    else ok = false;
+
+    if (ok) res.applied++;
+    else setError(res, key);
+  }
+  return res;
 }
 
 }  // namespace taptap

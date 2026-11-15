@@ -23,9 +23,11 @@
 #define TAPTAP_SLOT_MS_MAX     2000
 
 enum TapBuzMode : uint8_t {
-  TAP_BUZ_RTTTL = 0,
-  TAP_BUZ_CW    = 1,
-  TAP_BUZ_OFF   = 2,
+  TAP_BUZ_RTTTL    = 0,   // ringtone
+  TAP_BUZ_CWMATCH  = 1,   // canned match -> slot pattern, otherwise Morse (value kept from the old "cw")
+  TAP_BUZ_OFF      = 2,
+  TAP_BUZ_CW       = 3,   // always Morse, no table check
+  TAP_BUZ_RTTTLMATCH = 4, // canned match -> slot pattern, otherwise ringtone
 };
 
 // led_flags bits (a set bit turns the feature OFF)
@@ -62,6 +64,7 @@ struct TapTapSettings {
   static const uint8_t  VERSION = 1;
 
   void setDefaults();
+  void resetKeepMessages();   // defaults, but keep canned messages + tap target
   bool isValid() const;
   void sanitise();            // clamp fields that may be out of range (e.g. from older files)
 };
@@ -98,4 +101,23 @@ namespace taptap {
   // 'out' >= 64 bytes each.
   void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_BEEP_MS_DEFAULT);
   void buildSlotFlashes(int idx, char* out, size_t out_len, int flash_ms = TAPTAP_SLOT_MS_DEFAULT);
+
+  // ---- export / import ----
+  // Export writes up to 'max_lines' lines, each a complete "/import k=v;k=v" command that fits one
+  // app message. 'tap_spec' is "ch:<name>" / "dev:<hex pubkey>" (or "" to skip). Returns line count.
+  #define TAPTAP_EXPORT_LINE 121   // 120 chars: fits one app message even with a long node name
+  int exportSettings(const TapTapSettings& st, const char* tap_spec, char lines[][TAPTAP_EXPORT_LINE], int max_lines);
+
+  struct ImportResult {
+    int applied = 0;
+    int errors = 0;
+    char first_error[32] = {0};
+  };
+  // Applies "k=v;k=v" pairs to 'st' ('text' is what follows "/import"). 'tap' values are handed to
+  // tap_handler (which returns false if it can't resolve them). Values escape ';' and '\' with '\'.
+  ImportResult importSettings(const char* text, TapTapSettings& st,
+                              bool (*tap_handler)(const char* value, void* ctx), void* ctx);
+
+  // escape ';' and '\' for export values
+  void escapeValue(const char* in, char* out, size_t out_len);
 }

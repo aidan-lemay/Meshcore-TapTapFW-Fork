@@ -2537,6 +2537,50 @@ void MyMesh::describeTapTarget(char* dest, size_t len) {
   }
 }
 
+bool MyMesh::tapTargetSpec(char* dest, size_t len) {
+  int ch_idx;
+  ChannelDetails ch;
+  ContactInfo* contact;
+  if (!resolveTapTarget(ch_idx, ch, contact)) return false;
+  if (contact) {
+    char hex[PUB_KEY_SIZE * 2 + 1];
+    mesh::Utils::toHex(hex, contact->id.pub_key, PUB_KEY_SIZE);
+    snprintf(dest, len, "dev:%s", hex);
+  } else {
+    snprintf(dest, len, "ch:%s", ch.name);
+  }
+  return true;
+}
+
+bool MyMesh::applyTapTargetSpec(const char* spec) {
+  TapTarget& t = _taptap.target;
+  if (strncasecmp(spec, "ch:", 3) == 0) {
+    ChannelDetails ch;
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+      if (getChannel(i, ch) && ch.name[0] && strcasecmp(ch.name, spec + 3) == 0) {
+        t.type = TAP_TARGET_CHANNEL;
+        t.channel_idx = i;
+        memcpy(t.key, ch.channel.secret, PUB_KEY_SIZE);
+        return true;
+      }
+    }
+    return false;   // no channel with that name on this device
+  }
+  if (strncasecmp(spec, "dev:", 4) == 0) {
+    uint8_t key[PUB_KEY_SIZE];
+    const char* hex = spec + 4;
+    int nbytes = strlen(hex) / 2;
+    if (nbytes < 6 || nbytes > PUB_KEY_SIZE || !mesh::Utils::fromHex(key, nbytes, hex)) return false;
+    ContactInfo* c = lookupContactByPubKey(key, nbytes);
+    if (!c) return false;
+    t.type = TAP_TARGET_CONTACT;
+    t.channel_idx = 0;
+    memcpy(t.key, c->id.pub_key, PUB_KEY_SIZE);
+    return true;
+  }
+  return false;
+}
+
 bool MyMesh::sendTapMessage(const char* text) {
   int ch_idx;
   ChannelDetails ch;
@@ -2616,13 +2660,17 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "Commands:");
     tapReply(ch_idx, contact, "/msg [?|a|b|...]  canned messages");
     tapReply(ch_idx, contact, "/tap [here]  button send target");
-    tapReply(ch_idx, contact, "/buz [rtttl|cw|off]  alert style");
+    tapReply(ch_idx, contact, "/buz [cwmatch|cw|rtttlmatch|rtttl|off]  alert style");
     tapReply(ch_idx, contact, "/rtttl [<rtttl>|clear]  ringtone");
     tapReply(ch_idx, contact, "/rep [on|off|<secs>]  repeat alerts until clicked");
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
     tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
     tapReply(ch_idx, contact, "/cw [<wpm>]  spelled-out CW alert speed");
     tapReply(ch_idx, contact, "/slot [beep|flash] [<ms>]  slot pattern timing");
+    tapReply(ch_idx, contact, "/show  all settings");
+    tapReply(ch_idx, contact, "/export  settings as /import lines");
+    tapReply(ch_idx, contact, "/import k=v;...  apply settings");
+    tapReply(ch_idx, contact, "/reset [all]  defaults (all = incl. messages + target)");
     return true;
   }
 
@@ -2631,7 +2679,7 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     if (*args == 0) {
       snprintf(reply, sizeof(reply), "Buzzer mode: %s", taptap::buzModeName(_taptap.buz_mode));
     } else if (!taptap::parseBuzMode(args, mode)) {
-      snprintf(reply, sizeof(reply), "Usage: /buz rtttl|cw|off");
+      snprintf(reply, sizeof(reply), "Usage: /buz cwmatch|cw|rtttlmatch|rtttl|off");
     } else if (mode == _taptap.buz_mode) {
       snprintf(reply, sizeof(reply), "Buzzer mode already %s", taptap::buzModeName(mode));
     } else {
@@ -2797,6 +2845,76 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     }
     snprintf(reply, sizeof(reply), "LED standby blink: %s (alerts/tones always flash)",
              (_taptap.led_flags & TAP_LED_NO_STANDBY) ? "off" : "on");
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/reset", &args)) {
+    if (*args == 0) {
+      _taptap.resetKeepMessages();
+      saveTapTap();
+      tapReply(ch_idx, contact, "Settings reset to defaults (canned messages + tap target kept)");
+    } else if (strcasecmp(args, "all") == 0) {
+      _taptap.setDefaults();
+      saveTapTap();
+      tapReply(ch_idx, contact, "Everything reset to defaults, incl. canned messages + tap target");
+    } else {
+      tapReply(ch_idx, contact, "Usage: /reset [all]");
+    }
+    return true;
+  }
+
+  if (tapCmd(text, "/show", &args)) {
+    char desc[48];
+    snprintf(reply, sizeof(reply), "Firmware: %s", FIRMWARE_VERSION);
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "Buzzer mode: %s, buzzer %s", taptap::buzModeName(_taptap.buz_mode),
+             _prefs.buzzer_quiet ? "muted" : "on");
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "Repeat alerts: %s, every %us", _taptap.repeat_alert ? "on" : "off", _taptap.repeat_gap_secs);
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "CW speed: %u wpm", _taptap.cw_wpm);
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "Slot: beeps %ums, flashes %ums dash / %ums dot", _taptap.slot_beep_ms,
+             _taptap.slot_flash_ms, _taptap.slot_flash_ms / 2);
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "LED standby: %s", (_taptap.led_flags & TAP_LED_NO_STANDBY) ? "off" : "on");
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "Ringtone: %s", _taptap.ringtone[0] ? _taptap.ringtone : "default");
+    tapReply(ch_idx, contact, reply);
+    describeTapTarget(desc, sizeof(desc));
+    snprintf(reply, sizeof(reply), "Tap target: %s", desc);
+    tapReply(ch_idx, contact, reply);
+    snprintf(reply, sizeof(reply), "Canned messages: %u", _taptap.canned_count);
+    tapReply(ch_idx, contact, reply);
+    for (int k = 0; k < _taptap.canned_count; k++) {
+      snprintf(reply, sizeof(reply), "[%d] %s", k + 1, _taptap.canned[k]);
+      tapReply(ch_idx, contact, reply);
+    }
+    return true;
+  }
+
+  if (tapCmd(text, "/export", &args)) {
+    char spec[80];
+    if (!tapTargetSpec(spec, sizeof(spec))) spec[0] = 0;
+    static char lines[12][TAPTAP_EXPORT_LINE];   // static: keep 1.4KB off the loop stack
+    int n = taptap::exportSettings(_taptap, spec, lines, 12);
+    tapReply(ch_idx, contact, "Copy each line below into a message and send it to import:");
+    for (int k = 0; k < n; k++) tapReply(ch_idx, contact, lines[k]);
+    return true;
+  }
+
+  if (tapCmd(text, "/import", &args)) {
+    if (*args == 0) {
+      tapReply(ch_idx, contact, "Usage: /import k=v;k=v  (get lines from /export)");
+      return true;
+    }
+    taptap::ImportResult r = taptap::importSettings(args, _taptap,
+        [](const char* v, void* ctx) { return ((MyMesh*)ctx)->applyTapTargetSpec(v); }, this);
+    _taptap.sanitise();
+    if (r.applied) saveTapTap();
+    if (r.errors) snprintf(reply, sizeof(reply), "Imported %d setting(s), %d failed (first: %s)", r.applied, r.errors, r.first_error);
+    else snprintf(reply, sizeof(reply), "Imported %d setting(s)", r.applied);
     tapReply(ch_idx, contact, reply);
     return true;
   }

@@ -121,17 +121,19 @@ bool UITask::buildAlert(const char* body, bool is_channel, bool content_only,
                         char* mel, size_t mel_len, char* led, size_t led_len) {
   TapTapSettings& st = the_mesh.getTapTap();
   mel[0] = 0;
-  int slot = taptap::matchCanned(body, st);
-  if (slot >= 0) {
-    // a known canned message: play its slot pattern (any buzzer mode), same as the tapper selection
-    taptap::buildSlotBeeps(slot, mel, mel_len, st.slot_beep_ms);
-    taptap::buildSlotFlashes(slot, led, led_len, st.slot_flash_ms);
-    return true;
+  if (content_only || st.buz_mode == TAP_BUZ_CWMATCH || st.buz_mode == TAP_BUZ_RTTTLMATCH) {
+    int slot = taptap::matchCanned(body, st);
+    if (slot >= 0) {
+      // a known canned message: play its slot pattern, same as the tapper selection
+      taptap::buildSlotBeeps(slot, mel, mel_len, st.slot_beep_ms);
+      taptap::buildSlotFlashes(slot, led, led_len, st.slot_flash_ms);
+      return true;
+    }
   }
-  if (content_only || st.buz_mode == TAP_BUZ_CW) {
+  if (content_only || st.buz_mode == TAP_BUZ_CWMATCH || st.buz_mode == TAP_BUZ_CW) {
     taptap::buildCwRtttl(body, mel, mel_len, st.cw_wpm);
-  } else if (st.ringtone[0]) {
-    StrHelper::strncpy(mel, st.ringtone, mel_len);
+  } else if (st.ringtone[0] && !taptap::normaliseRtttl(st.ringtone, mel, mel_len, NULL)) {
+    mel[0] = 0;   // stored ringtone isn't valid RTTTL (e.g. half-imported): use the default
   }
   if (mel[0] == 0) {   // nothing encodable / no custom ringtone
     StrHelper::strncpy(mel, is_channel ? TONE_MSG_CHANNEL : TONE_MSG_DM, mel_len);

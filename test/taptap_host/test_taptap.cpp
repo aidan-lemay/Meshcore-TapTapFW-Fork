@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string>
+#include <algorithm>
 
 unsigned long g_ms = 0; int g_freq = 0; int g_led = 0; int g_btn = 0;
 
@@ -14,7 +15,7 @@ static void test_taptap_and_player() {
   assert(taptap::buildCwRtttl("!!!", buf, sizeof buf)==0);
   char tiny[40]; int n=taptap::buildCwRtttl("hello world", tiny, sizeof tiny); printf("CW tiny(%d): %s\n", n, tiny); assert(n<40);
   TapTapSettings st; st.setDefaults(); assert(st.isValid());
-  assert(st.buz_mode == TAP_BUZ_CW && st.repeat_alert == 1 && (st.led_flags & TAP_LED_NO_STANDBY) && st.slot_beep_ms == 200 && st.slot_flash_ms == 500);
+  assert(st.buz_mode == TAP_BUZ_CWMATCH && st.repeat_alert == 1 && (st.led_flags & TAP_LED_NO_STANDBY) && st.slot_beep_ms == 200 && st.slot_flash_ms == 500);
   assert(taptap::parseCannedList(" hi | yes||no ", st)==3);
   printf("canned: [%s][%s][%s] count=%d\n", st.canned[0], st.canned[1], st.canned[2], st.canned_count);
   assert(taptap::parseCannedList(" | ", st)==0 && st.canned_count==3);
@@ -90,6 +91,80 @@ static void test_taptap_and_player() {
   {
     TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.slot_beep_ms = 7; s2.slot_flash_ms = 0; s2.sanitise();
     assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_BEEP_MS_DEFAULT && s2.slot_flash_ms == TAPTAP_SLOT_MS_DEFAULT);
+  }
+
+  // buzzer mode names round-trip
+  {
+    uint8_t m;
+    const char* names[] = { "rtttl", "cwmatch", "off", "cw", "rtttlmatch" };
+    for (int k = 0; k <= TAP_BUZ_RTTTLMATCH; k++) { assert(taptap::parseBuzMode(names[k], m) && m == k); assert(strcmp(taptap::buzModeName(k), names[k]) == 0); }
+    assert(!taptap::parseBuzMode("loud", m));
+  }
+  // export -> import round trip onto a fresh device
+  {
+    TapTapSettings a; a.setDefaults();
+    a.buz_mode = TAP_BUZ_RTTTLMATCH; a.repeat_alert = 0; a.repeat_gap_secs = 42; a.cw_wpm = 11;
+    a.slot_beep_ms = 333; a.slot_flash_ms = 777; a.led_flags = 0;
+    // long ringtone (needs several rt+= chunks) with an escaped ';' ... and messages with ; and backslash
+    strcpy(a.ringtone, "Long:d=8,o=6,b=180:c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7,g,e,c,e,g,c7");
+    assert(taptap::parseCannedList("Ok;fine|back\\slash|Third one|Fourth", a) == 4);
+    char lines[12][TAPTAP_EXPORT_LINE];
+    int n = taptap::exportSettings(a, "ch:Hiking; team", lines, 12);
+    printf("export: %d lines\n", n);
+    for (int k = 0; k < n; k++) { printf("  %s\n", lines[k]); assert(strncmp(lines[k], "/import ", 8) == 0 && strlen(lines[k]) < TAPTAP_EXPORT_LINE); }
+    TapTapSettings b; b.setDefaults();
+    std::string tap_seen;
+    for (int k = 0; k < n; k++) {
+      taptap::ImportResult r = taptap::importSettings(lines[k] + 8, b,
+          [](const char* v, void* ctx) { *(std::string*)ctx = v; return true; }, &tap_seen);
+      if (r.errors) printf("import err on line %d: %s (%s)\n", k, r.first_error, lines[k]);
+      assert(r.errors == 0 && r.applied > 0);
+    }
+    assert(b.buz_mode == a.buz_mode && b.repeat_alert == 0 && b.repeat_gap_secs == 42 && b.cw_wpm == 11);
+    assert(b.slot_beep_ms == 333 && b.slot_flash_ms == 777 && b.led_flags == 0);
+    assert(strcmp(b.ringtone, a.ringtone) == 0);
+    assert(b.canned_count == 4 && strcmp(b.canned[0], "Ok;fine") == 0 && strcmp(b.canned[1], "back\\slash") == 0 && strcmp(b.canned[3], "Fourth") == 0);
+    assert(tap_seen == "ch:Hiking; team");
+  }
+  // worst case: max-length messages made of ';' (escape doubles them) still fit 120-char lines
+  {
+    TapTapSettings a; a.setDefaults();
+    for (int k = 0; k < TAPTAP_MAX_CANNED; k++) { memset(a.canned[k], ';', TAPTAP_CANNED_LEN - 1); a.canned[k][TAPTAP_CANNED_LEN - 1] = 0; }
+    memset(a.ringtone, ';', TAPTAP_RINGTONE_LEN - 1); a.ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
+    char lines[40][TAPTAP_EXPORT_LINE];
+    int n = taptap::exportSettings(a, "dev:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", lines, 40);
+    size_t longest = 0;
+    for (int k = 0; k < n; k++) longest = std::max(longest, strlen(lines[k]));
+    printf("worst-case export: %d lines, longest %zu chars\n", n, longest);
+    assert(n < 40 && longest <= 120);
+    TapTapSettings b; b.setDefaults();
+    std::string tap;
+    for (int k = 0; k < n; k++) {
+      taptap::ImportResult r = taptap::importSettings(lines[k] + 8, b, [](const char* v, void* c) { *(std::string*)c = v; return true; }, &tap);
+      assert(r.errors == 0);
+    }
+    assert(memcmp(a.canned, b.canned, sizeof(a.canned)) == 0 && strcmp(a.ringtone, b.ringtone) == 0 && tap.size() == 68);
+  }
+  // partial / bad imports
+  {
+    TapTapSettings c; c.setDefaults();
+    taptap::ImportResult r = taptap::importSettings("cw=12; beep=9999;bogus=1;led=off;msgs=2;m2=Changed", c, nullptr, nullptr);
+    printf("partial import: applied %d, errors %d, first '%s'\n", r.applied, r.errors, r.first_error);
+    assert(r.applied == 4 && r.errors == 2 && strcmp(r.first_error, "beep") == 0);
+    assert(c.cw_wpm == 12 && c.slot_beep_ms == TAPTAP_SLOT_BEEP_MS_DEFAULT && c.canned_count == 2 && strcmp(c.canned[1], "Changed") == 0 && c.canned[2][0] == 0);
+    r = taptap::importSettings("tap=ch:Nowhere", c, [](const char*, void*) { return false; }, nullptr);
+    assert(r.applied == 0 && r.errors == 1);
+    r = taptap::importSettings("m5=skips a slot", c, nullptr, nullptr);   // must fill slots in order
+    assert(r.errors == 1 && c.canned_count == 2);
+  }
+  // reset keeps messages + target; reset all doesn't
+  {
+    TapTapSettings d; d.setDefaults();
+    taptap::parseCannedList("Mine|Yours", d); d.target.type = TAP_TARGET_CONTACT; d.cw_wpm = 5; d.buz_mode = TAP_BUZ_OFF;
+    d.resetKeepMessages();
+    assert(d.cw_wpm == TAPTAP_CW_WPM_DEFAULT && d.buz_mode == TAP_BUZ_CWMATCH && d.canned_count == 2 && strcmp(d.canned[1], "Yours") == 0 && d.target.type == TAP_TARGET_CONTACT);
+    d.setDefaults();
+    assert(d.canned_count == TAPTAP_MAX_CANNED && strcmp(d.canned[0], "All good") == 0 && d.target.type == TAP_TARGET_CHANNEL);
   }
 
 }
