@@ -40,8 +40,6 @@ static const char TONE_ERR[]          = "CannedErr:d=32,o=5,b=160:8c5,16p,8c5";
 static const char TONE_SEND[]         = "CannedSend:d=16,o=6,b=200:8g5,8b5,8d6";
 static const char TONE_ENTER[]        = "CannedEnter:d=32,o=6,b=220:16c6,16e6,16g6";
 static const char TONE_EXIT[]         = "CannedExit:d=32,o=5,b=180:16g5,16e5,16c5";
-static const char TONE_GPS_ON[]       = "GpsOn:d=32,o=6,b=200:16c6,16e6,16g6";
-static const char TONE_GPS_OFF[]      = "GpsOff:d=32,o=5,b=200:16g5,16e5,16c5";
 static const char TONE_UNMUTE[]       = "Unmute:d=16,o=6,b=200:c,g";
 static const char TONE_MORSE_IN[]     = "MorseIn:d=32,o=6,b=220:16g6,16p,16g6";
 static const char TONE_MORSE_DEL[]    = "MorseDel:d=32,o=5,b=200:16c5";
@@ -119,32 +117,49 @@ bool UITask::recentlyAlerted(uint32_t h) {
   return false;
 }
 
+bool UITask::buildAlert(const char* body, bool is_channel, bool content_only,
+                        char* mel, size_t mel_len, char* led, size_t led_len) {
+  TapTapSettings& st = the_mesh.getTapTap();
+  bool split = false;
+  mel[0] = 0;
+  if (content_only || st.buz_mode == TAP_BUZ_CW) {
+    int slot = taptap::matchCanned(body, st);
+    if (slot >= 0) {
+      // a known canned message: play its slot pattern, same as the tapper selection
+      taptap::buildSlotBeeps(slot, mel, mel_len, st.slot_beep_ms);
+      taptap::buildSlotFlashes(slot, led, led_len, st.slot_flash_ms);
+      split = true;
+    } else {
+      taptap::buildCwRtttl(body, mel, mel_len, st.cw_wpm);
+    }
+  } else if (st.ringtone[0]) {
+    StrHelper::strncpy(mel, st.ringtone, mel_len);
+  }
+  if (mel[0] == 0) {   // nothing encodable / no custom ringtone
+    StrHelper::strncpy(mel, is_channel ? TONE_MSG_CHANNEL : TONE_MSG_DM, mel_len);
+  }
+  return split;
+}
+
+void UITask::playAlert() {
+  _player.play(_alert_melody, _alert_split ? _alert_led : nullptr);
+  _playing_alert = true;
+}
+
 void UITask::alertIncoming(const char* body, bool is_channel) {
+  StrHelper::strncpy(_last_msg, body, sizeof(_last_msg));   // remembered for replay even when not alerting
+  _last_is_channel = is_channel;
+
   TapTapSettings& st = the_mesh.getTapTap();
   if (st.buz_mode == TAP_BUZ_OFF) return;
   if (recentlyAlerted(taptap::fnv1a(body))) return;
 
-  _alert_melody[0] = 0;
-  if (st.buz_mode == TAP_BUZ_CW) {
-    int slot = taptap::matchCanned(body, st);
-    if (slot >= 0) {
-      // a known canned message: play its slot pattern, same as the tapper selection tone
-      taptap::buildIndexTone(slot, _alert_melody, sizeof(_alert_melody), st.slot_beep_ms);
-    } else {
-      taptap::buildCwRtttl(body, _alert_melody, sizeof(_alert_melody), st.cw_wpm);
-    }
-  } else if (st.ringtone[0]) {
-    StrHelper::strncpy(_alert_melody, st.ringtone, sizeof(_alert_melody));
-  }
-  if (_alert_melody[0] == 0) {   // nothing encodable / no custom ringtone
-    StrHelper::strncpy(_alert_melody, is_channel ? TONE_MSG_CHANNEL : TONE_MSG_DM, sizeof(_alert_melody));
-  }
+  _alert_split = buildAlert(body, is_channel, false, _alert_melody, sizeof(_alert_melody), _alert_led, sizeof(_alert_led));
 
   if (_morse_mode || (_player.isPlaying() && _playing_alert)) {
     _alert_queued = true;        // don't talk over the key / current alert: play the newest after
   } else {
-    _player.play(_alert_melody);
-    _playing_alert = true;
+    playAlert();
   }
   _gap_started = false;
   _alert_pending = st.repeat_alert != 0;
@@ -200,9 +215,11 @@ void UITask::handleButtonShortPress() {
       return;
     }
     _canned_idx = (_canned_idx + 1) % st.canned_count;
-    char tone[80];
-    taptap::buildIndexTone(_canned_idx, tone, sizeof(tone), st.slot_beep_ms);
-    playTone(tone);
+    char tone[80], flashes[80];
+    taptap::buildSlotBeeps(_canned_idx, tone, sizeof(tone), st.slot_beep_ms);
+    taptap::buildSlotFlashes(_canned_idx, flashes, sizeof(flashes), st.slot_flash_ms);
+    _playing_alert = false;
+    _player.play(tone, flashes);
     setStatus("[%d] %s", _canned_idx + 1, st.canned[_canned_idx]);
     return;
   }
@@ -237,21 +254,18 @@ void UITask::exitCannedMode(bool with_tone) {
   if (with_tone) playTone(TONE_EXIT);
 }
 
-// 3 clicks: GPS on/off
+// 3 clicks: replay the last received message (its content: slot pattern or CW, whatever /buz is)
 void UITask::handleButtonTriplePress() {
-  if (_sensors == NULL) return;
-  int num = _sensors->getNumSettings();
-  for (int i = 0; i < num; i++) {
-    if (strcmp(_sensors->getSettingName(i), "gps") == 0) {
-      bool on = strcmp(_sensors->getSettingValue(i), "1") != 0;
-      _sensors->setSettingValue("gps", on ? "1" : "0");
-      _node_prefs->gps_enabled = on ? 1 : 0;
-      the_mesh.savePrefs();
-      playTone(on ? TONE_GPS_ON : TONE_GPS_OFF);
-      setStatus("GPS: %s", on ? "Enabled" : "Disabled");
-      return;
-    }
+  if (_last_msg[0] == 0) {
+    playTone(TONE_ERR);
+    setStatus("No message to replay");
+    return;
   }
+  bool split = buildAlert(_last_msg, _last_is_channel, true, _replay_melody, sizeof(_replay_melody),
+                          _replay_led, sizeof(_replay_led));
+  _playing_alert = false;   // a replay, not an alert: doesn't start repeat-until-ack
+  _player.play(_replay_melody, split ? _replay_led : nullptr);
+  setStatus("Replay: %s", _last_msg);
 }
 
 // 4 clicks: mute / unmute buzzer (LED keeps mirroring everything)
@@ -463,8 +477,7 @@ void UITask::loop() {
   if (!_player.isPlaying() && !_morse_mode) {
     if (_alert_queued) {
       _alert_queued = false;
-      _player.play(_alert_melody);
-      _playing_alert = true;
+      playAlert();
       _gap_started = false;
     } else if (_alert_pending) {
       if (!_gap_started) {
@@ -472,8 +485,7 @@ void UITask::loop() {
         _alert_next = millis() + (unsigned long)the_mesh.getTapTap().repeat_gap_secs * 1000;
       } else if ((long)(millis() - _alert_next) >= 0) {
         _gap_started = false;
-        _player.play(_alert_melody);
-        _playing_alert = true;
+        playAlert();
       }
     } else {
       _playing_alert = false;

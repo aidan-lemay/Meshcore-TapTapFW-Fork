@@ -2622,7 +2622,7 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
     tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
     tapReply(ch_idx, contact, "/cw [<wpm>]  spelled-out CW alert speed");
-    tapReply(ch_idx, contact, "/slot [<ms>]  slot pattern dash length");
+    tapReply(ch_idx, contact, "/slot [beep|flash] [<ms>]  slot pattern timing");
     return true;
   }
 
@@ -2754,18 +2754,28 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
   }
 
   if (tapCmd(text, "/slot", &args)) {
-    if (*args) {
-      int ms = atoi(args);
+    // /slot <ms> = both, /slot beep <ms> = buzzer, /slot flash <ms> = LED
+    uint16_t* which[2] = { &_taptap.slot_beep_ms, &_taptap.slot_flash_ms };
+    int first = 0, count = 2;
+    const char* v = args;
+    if (strncasecmp(v, "beep", 4) == 0 && (v[4] == ' ' || v[4] == 0)) { first = 0; count = 1; v += 4; }
+    else if (strncasecmp(v, "flash", 5) == 0 && (v[5] == ' ' || v[5] == 0)) { first = 1; count = 1; v += 5; }
+    while (*v == ' ') v++;
+    if (*v) {
+      int ms = atoi(v);
       if (ms < TAPTAP_SLOT_MS_MIN || ms > TAPTAP_SLOT_MS_MAX) {
-        snprintf(reply, sizeof(reply), "Usage: /slot <%d-%d ms>", TAPTAP_SLOT_MS_MIN, TAPTAP_SLOT_MS_MAX);
+        snprintf(reply, sizeof(reply), "Usage: /slot [beep|flash] <%d-%d ms>", TAPTAP_SLOT_MS_MIN, TAPTAP_SLOT_MS_MAX);
         tapReply(ch_idx, contact, reply);
         return true;
       }
-      _taptap.slot_beep_ms = ms;
+      for (int k = first; k < first + count; k++) *which[k] = ms;
       saveTapTap();
+    } else if (count == 1) {
+      tapReply(ch_idx, contact, "Usage: /slot [beep|flash] <ms>");
+      return true;
     }
-    snprintf(reply, sizeof(reply), "Slot pattern: 1 = %ums dash, 0 = %ums dot, %ums gaps",
-             _taptap.slot_beep_ms, _taptap.slot_beep_ms / 2, _taptap.slot_beep_ms / 2);
+    snprintf(reply, sizeof(reply), "Slot beeps: %ums (high=1 low=0). Flashes: 1=%ums dash, 0=%ums dot",
+             _taptap.slot_beep_ms, _taptap.slot_flash_ms, _taptap.slot_flash_ms / 2);
     tapReply(ch_idx, contact, reply);
     return true;
   }

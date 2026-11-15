@@ -24,7 +24,8 @@ static void test_taptap_and_player() {
   assert(taptap::normaliseRtttl("x:d=4,o=5,b=100:c", r, sizeof r, &tr) && !tr);
   assert(!taptap::normaliseRtttl("hello", r, sizeof r, &tr)); assert(!taptap::normaliseRtttl("a:b:c", r, sizeof r, &tr));
   char sm[24]; assert(taptap::normaliseRtttl("d=8,o=6,b=180:c,e,g,a,b,c,d", sm, sizeof sm, &tr) && tr); printf("trunc: %s\n", sm);
-  for(int i=0;i<3;i++){ taptap::buildIndexTone(i, r, sizeof r); printf("idx%d: %s\n", i, r);}
+  for(int i=0;i<3;i++){ taptap::buildSlotBeeps(i, r, sizeof r); printf("beeps%d: %s\n", i, r);}
+  for(int i=0;i<3;i++){ taptap::buildSlotFlashes(i, r, sizeof r); printf("flash%d: %s\n", i, r);}
   // player timing: CW "e" = one dit at b=480,d=8 -> 62ms note
   TapPlayer p; p.begin(25,37,24,true);
   taptap::buildCwRtttl("e", buf, sizeof buf); p.play(buf);
@@ -38,24 +39,40 @@ static void test_taptap_and_player() {
   { taptap::buildCwRtttl("sos hi", buf, sizeof buf); assert(strcmp(buf,"CW:d=8,o=6,b=475:a,p,a,p,a,4p.,4a.,p,4a.,p,4a.,4p.,a,p,a,p,a,2p.,p,a,p,a,p,a,p,a,4p.,a,p,a")==0);
     g_ms=5000; p.play(buf); int steps=0; while(p.isPlaying()){ g_ms+=1; p.loop(); steps++; } printf("sos hi plays %d ms\n", steps); }
   
-  // slot 101 at 500ms: dash 500, gap 250, dot 250, gap 250, dash 500 = 1750ms, lit 1250ms
+  // slot 101, beeps 500ms, flashes 500ms: buzzer and LED run on separate timelines
+  //  buzzer: 3 equal 500ms beeps (high, low, high) + 2*250 gaps = 2000ms, sounding 1500ms
+  //  LED:    dash 500, gap 250, dot 250, gap 250, dash 500  = 1750ms, lit 1250ms
   {
     TapPlayer q; q.begin(25, 37, 24, true);
-    taptap::buildIndexTone(5, r, sizeof r);        // 101
-    g_ms = 20000; q.play(r);
-    int on_ms = 0, total = 0;
-    while (q.isPlaying()) { if (g_led) on_ms++; g_ms++; q.loop(); total++; }
-    printf("slot tone: total %dms, lit %dms\n", total, on_ms);
-    assert(total == 1750 && on_ms == 1250);
+    char beeps[80], flashes[80];
+    taptap::buildSlotBeeps(5, beeps, sizeof beeps);
+    taptap::buildSlotFlashes(5, flashes, sizeof flashes);
+    g_ms = 20000; q.play(beeps, flashes);
+    int lit = 0, sounding = 0, total = 0, led_off_at = -1, first = g_freq, low = 0;
+    while (q.isPlaying()) {
+      if (g_led) lit++;
+      if (g_freq) sounding++;
+      if (g_freq && g_freq < 1000) low++;
+      if (!g_led && led_off_at < 0 && total > 1500) led_off_at = total;
+      g_ms++; q.loop(); total++;
+    }
+    printf("slot split: total %d, sounding %d (low %d), lit %d, led done at %d\n", total, sounding, low, lit, led_off_at);
+    assert(total == 2000 && sounding == 1500 && low == 500 && lit == 1250 && led_off_at == 1750 && first == 1760);
   }
-  // slot 000 at 200ms: three 100ms dots + two 100ms gaps = 500ms; CW speed setting doesn't affect it
+  // independent settings: beeps 200 -> 3*200 + 2*100 = 800ms; flashes 200 on 000 -> 3*100 + 2*100 = 500ms
   {
     TapPlayer q; q.begin(25, 37, 24, true);
-    taptap::buildIndexTone(0, r, sizeof r, 200); g_ms = 25000; q.play(r);
-    int t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("slot 200ms: %dms\n", t); assert(t == 500);
-    taptap::buildIndexTone(7, r, sizeof r, 200); g_ms = 26000; q.play(r);   // 111: 3*200 + 2*100 = 800ms
-    t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } assert(t == 800);
-    taptap::buildIndexTone(0, r, sizeof r, 9999); assert(strstr(r, "b=120:"));   // out of range -> 500ms default
+    char beeps[80], flashes[80];
+    taptap::buildSlotBeeps(0, beeps, sizeof beeps, 200);
+    taptap::buildSlotFlashes(0, flashes, sizeof flashes, 1000);
+    g_ms = 25000; q.play(beeps, flashes);   // LED 000 at 1000: 3*500 + 2*500 = 2500ms
+    int t = 0, lit = 0; while (q.isPlaying()) { if (g_led) lit++; g_ms++; q.loop(); t++; }
+    printf("slot beeps 200 / flashes 1000: %dms, lit %d\n", t, lit); assert(t == 2500 && lit == 1500);
+    taptap::buildSlotBeeps(0, beeps, sizeof beeps, 9999); assert(strstr(beeps, "b=120:"));   // out of range -> default
+    // muted: buzzer silent, LED still follows its own track
+    q.setQuiet(true); g_ms = 30000; q.play(beeps, flashes);
+    int heard = 0; lit = 0; while (q.isPlaying()) { if (g_freq) heard++; if (g_led) lit++; g_ms++; q.loop(); }
+    assert(heard == 0 && lit == 1500); q.setQuiet(false);
   }
   // CW speed: 12 wpm -> 100ms dit; 2 wpm -> 600ms dit
   {
@@ -68,8 +85,8 @@ static void test_taptap_and_player() {
   }
   // older (shorter) settings: fields past the end keep defaults; sanitise fixes junk
   {
-    TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.slot_beep_ms = 7; s2.sanitise();
-    assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_MS_DEFAULT);
+    TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.slot_beep_ms = 7; s2.slot_flash_ms = 0; s2.sanitise();
+    assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_MS_DEFAULT && s2.slot_flash_ms == TAPTAP_SLOT_MS_DEFAULT);
   }
 
 }

@@ -54,7 +54,8 @@ struct TapTapSettings {
   uint8_t  repeat_gap_secs;   // pause between repeats
   // --- fields below were added later; older (shorter) files load with these at defaults ---
   uint8_t  cw_wpm;            // CW alert speed (spelled-out text), words per minute
-  uint16_t slot_beep_ms;      // slot pattern beep length (selection + matched-message alerts)
+  uint16_t slot_beep_ms;      // slot pattern: buzzer beep length (all beeps equal, high = 1, low = 0)
+  uint16_t slot_flash_ms;     // slot pattern: LED dash length (1 = dash, 0 = dot = half)
 
   static const uint32_t MAGIC = 0x50415454;  // 'TTAP'
   static const uint8_t  VERSION = 1;
@@ -90,7 +91,10 @@ namespace taptap {
   // Index of the canned slot whose text equals 'text' (case-insensitive, trimmed), or -1.
   int matchCanned(const char* text, const TapTapSettings& st);
 
-  // Melody that plays 3-bit binary of 'idx': 1 = dash (high tone, beep_ms long),
-  // 0 = dot (low tone, beep_ms/2), gaps beep_ms/2. 'out' >= 64 bytes.
-  void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_MS_DEFAULT);
+  // Slot pattern (3-bit binary of 'idx', MSB first), as two tracks played together:
+  //  buzzer: equal-length beeps, high tone = 1, low tone = 0, gaps beep_ms/2
+  //  LED:    1 = dash (flash_ms), 0 = dot (flash_ms/2), gaps flash_ms/2
+  // 'out' >= 64 bytes each.
+  void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_MS_DEFAULT);
+  void buildSlotFlashes(int idx, char* out, size_t out_len, int flash_ms = TAPTAP_SLOT_MS_DEFAULT);
 }

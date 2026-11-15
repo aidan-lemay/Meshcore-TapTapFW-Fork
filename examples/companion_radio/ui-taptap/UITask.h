@@ -39,6 +39,14 @@ class UITask : public AbstractUITask {
 
   // incoming-message alert (+ repeat-until-ack)
   char _alert_melody[TAPTAP_CW_BUF_LEN];
+  char _alert_led[96];             // separate LED track (slot pattern), if _alert_split
+  bool _alert_split = false;
+
+  // last received message, for replay (3 clicks)
+  char _last_msg[MAX_TEXT_LEN + 1] = {0};
+  bool _last_is_channel = false;
+  char _replay_melody[TAPTAP_CW_BUF_LEN];
+  char _replay_led[96];
   bool _alert_queued = false;      // play _alert_melody as soon as the player is free
   bool _alert_pending = false;     // repeat until acknowledged
   bool _playing_alert = false;     // current playback is the alert (vs. a UI tone)
@@ -56,6 +64,10 @@ class UITask : public AbstractUITask {
 
   void playTone(const char* rtttl);                  // UI feedback tone (doesn't cancel a pending alert)
   void alertIncoming(const char* body, bool is_channel);
+  // builds the alert for 'body'; content_only = always slot pattern / CW (ignore ringtone + buzzer mode).
+  // Returns true if 'led' holds a separate LED track.
+  bool buildAlert(const char* body, bool is_channel, bool content_only, char* mel, size_t mel_len, char* led, size_t led_len);
+  void playAlert();
   void ackAlert();
   bool recentlyAlerted(uint32_t h);
   void exitCannedMode(bool with_tone);

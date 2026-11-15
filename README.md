@@ -5,7 +5,7 @@ Headless, one-button messaging firmware for the **Seeed Studio T1000-E**, built 
 
 The T1000-E has no screen, so everything is done with the single button, the buzzer and the
 green LED: send canned messages, key in free text with Morse code, and get incoming
-messages played back as tunes, Morse (CW) or slot patterns. The LED mirrors every sound, so the
+messages played back as tunes, Morse (CW) or slot patterns. The LED shows every sound, so the
 device also works muted.
 
 This is an independent, clean re-implementation of the TapTap feature set on current upstream
@@ -56,11 +56,12 @@ To go back to stock firmware, flash the official MeshCore T1000-E companion `.uf
 |---|---|---|---|
 | **1 click** | Send advert. If an alert is pending: **acknowledge** it | Next canned message | *(keying: see below)* |
 | **2 clicks** | Enter **canned mode** | Switch to **Morse mode** | *(keying)* |
-| **3 clicks** | GPS on / off | GPS on / off | *(keying)* |
+| **3 clicks** | **Replay** the last received message | Replay | *(keying)* |
 | **4 clicks** | **Mute / unmute** buzzer | Mute / unmute | *(keying)* |
 | **Hold 1.2 s** | (first 8 s after boot: USB CLI rescue) | **Send** selected message | **Send** composed message |
 | **Hold 5 s** | Power off | Power off | Power off |
 
+- GPS is turned on and off **from the app** (the device's GPS setting), not the button.
 - The 1.2 s hold fires **as soon as 1.2 s is reached**. You don't need to let go, and letting go afterwards does nothing.
 - Canned mode exits after **15 s** with no clicks. Morse mode exits after **10 s** with no keying.
 - **Holding to power off while in canned mode also sends the selected message**, because the
@@ -72,25 +73,26 @@ To go back to stock firmware, flash the official MeshCore T1000-E companion `.uf
 
 There are up to **8** preset messages. The defaults are:
 
-| Slot | Pattern | Default text |
-|---|---|---|
-| 1 | `000` · · · | All good |
-| 2 | `001` · · — | Stop and wait |
-| 3 | `010` · — · | Need assistance |
-| 4 | `011` · — — | Emergency, send help |
-| 5 | `100` — · · | Found water |
-| 6 | `101` — · — | Returning to camp |
-| 7 | `110` — — · | Running behind |
-| 8 | `111` — — — | Found the point |
+| Slot | Pattern | Buzzer | LED | Default text |
+|---|---|---|---|---|
+| 1 | `000` | low low low | · · · | All good |
+| 2 | `001` | low low high | · · — | Stop and wait |
+| 3 | `010` | low high low | · — · | Need assistance |
+| 4 | `011` | low high high | · — — | Emergency, send help |
+| 5 | `100` | high low low | — · · | Found water |
+| 6 | `101` | high low high | — · — | Returning to camp |
+| 7 | `110` | high high low | — — · | Running behind |
+| 8 | `111` | high high high | — — — | Found the point |
 
 1. **2 clicks** to enter canned mode (rising three-note chirp).
-2. **1 click** steps to the next message. The device beeps the slot number as 3 binary digits:
-   - **1 = dash**: high beep, long flash (0.5 s)
-   - **0 = dot**: low beep, short flash (0.25 s)
+2. **1 click** steps to the next message. The device shows the slot number as 3 binary digits,
+   with the buzzer and the LED each using their own timing:
+   - **Buzzer:** equal-length beeps, **high = 1, low = 0** (0.5 s each, 0.25 s gaps by default)
+   - **LED:** **1 = dash** (0.5 s), **0 = dot** (0.25 s), dot-length gaps, so it can be read with the buzzer muted
 
-   So slot 1 is dot-dot-dot (`000`) and slot 6 is dash-dot-dash (`101`). Because the lengths differ,
-   you can read the pattern from the LED alone when muted. Gaps are dot length. `/slot <ms>` sets the dash
-   length; the dot and gaps are always half of it.
+   So slot 6 (`101`) sounds high-low-high and flashes dash-dot-dash. The two start together, but each
+   follows its own timing, so they don't stay in step. Change them separately with
+   `/slot beep <ms>` and `/slot flash <ms>` (or both at once with `/slot <ms>`).
 3. **Hold 1.2 s** to send it to the [tap target](#commands). A rising "sent" tune means it was sent.
    A double low buzz means it failed (for example, no tap target set).
 
@@ -124,11 +126,14 @@ When a direct message or channel message arrives, the device alerts in the curre
 | Mode | What you hear |
 |---|---|
 | `rtttl` *(default)* | Your custom ringtone (`/rtttl`), or the built-in message chirp |
-| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear when picking it with the button. The spelled-out Morse speed (`/cw`) and the slot pattern speed (`/slot`) are separate settings. So "All good" is a quick `000`. |
+| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear and see when picking it with the button. So "All good" is low-low-low with three short flashes. The spelled-out Morse speed (`/cw`) and the slot pattern timing (`/slot`) are separate settings. |
 | `off` | No alert |
 
 - **Alerts play even while the app is connected.**
-- **The LED flashes with every note**, so alerts are visible when muted (4 clicks).
+- **The LED flashes with every note** (for slot patterns, with its own dot/dash timing), so alerts are visible when muted (4 clicks).
+- **3 clicks replays the last received message**, at any time. Replay always plays the *content*,
+  whatever `/buz` is set to: the slot pattern if it matches a canned message, otherwise Morse.
+  It doesn't start a repeat-until-ack cycle. If nothing has been received since power-on, you get the error buzz.
 - **Repeat until acknowledged** (`/rep on`): the alert repeats every *N* seconds (default 5)
   until you **single-click**, or until you read the messages in the app.
 - If the same text arrives again within 30 s (resends, or the same message on several routes), it only alerts once.
@@ -162,7 +167,9 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/cw` | Show the CW alert speed |
 | `/cw <wpm>` | Set the CW alert speed, 1–40 words per minute (dit = 1200 / wpm ms: 19 → 63 ms, 12 → 100 ms, 2 → 600 ms) |
 | `/slot` | Show the slot pattern timing |
-| `/slot <ms>` | Set the slot pattern **dash** length, 50–2000 ms. Dots and gaps are half that. Used both when picking a canned message and when an incoming message matches one. Default 500 |
+| `/slot beep <ms>` | Buzzer beep length for the slot pattern, 50–2000 ms (all beeps equal; gaps are half). Default 500 |
+| `/slot flash <ms>` | LED **dash** length for the slot pattern, 50–2000 ms (dots and gaps are half). Default 500 |
+| `/slot <ms>` | Set both at once. Used both when picking a canned message and when an incoming message matches one |
 | `/led` | Show LED settings |
 | `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off. When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
@@ -182,16 +189,15 @@ All of these settings are saved on the device and survive reboots.
 | Enter canned mode | quick rising chirp |
 | Leave canned / Morse mode | quick falling chirp |
 | Enter Morse mode | two short high beeps |
-| Slot selected | 3-bit pattern: 1 = high dash (0.5 s), 0 = low dot (0.25 s) by default (`/slot`) |
+| Slot selected | 3-bit pattern: buzzer high = 1 / low = 0; LED dash = 1 / dot = 0 (`/slot`) |
 | Message sent | rising "sent" tune |
 | Error / failed | double low buzz |
 | Morse letter deleted | single low blip |
-| GPS on / off | rising / falling chirp |
 | Unmute / mute | up / down two-note (mute plays on the LED only) |
 | Acknowledge alert | very short high tick |
 | Power off | falling three notes |
 
-The green LED lights for every note above. When nothing is playing it shows a heartbeat:
+The green LED lights for every note above (the slot pattern flashes on its own dot/dash timing). When nothing is playing it shows a heartbeat:
 a short blink every 4 s, or a longer blink when messages are waiting or an alert is pending.
 Turn the heartbeat off with `/led standby off` if it gets in the way of reading messages on the LED.
 
@@ -267,6 +273,8 @@ git merge upstream/main
 New in this edition:
 
 - **Canned-slot alerts**: in CW mode, incoming messages that match a canned message play the slot pattern instead of the full text.
+- **Replay the last message on 3 clicks** (GPS moved to the app).
+- **Separate buzzer and LED timing** for the slot pattern (`/slot beep`, `/slot flash`).
 - **Mute/unmute on 4 clicks**, saved across reboots.
 - **LED mirrors all sounds**, so it works silently.
 - **Repeat-until-acknowledged alerts** (`/rep`).
@@ -274,7 +282,7 @@ New in this edition:
 - `/rep`, `/rtttl clear`, `/msg ?`, and channel targets that follow re-ordered channels.
 - Built on MeshCore **v1.18.0**.
 
-Behaviour kept from TapTap: the button map for advert, canned mode, Morse mode, GPS and power off; the
+Behaviour kept from TapTap: the button map for advert, canned mode, Morse mode and power off; the
 binary slot beeps; the tones; the commands; Morse alerts; the default canned messages.
 
 Not included: the LED blinking the current time in Morse after an advert, and TapTap's Easter

@@ -17,7 +17,8 @@ void TapPlayer::begin(int buzzer_pin, int buzzer_en_pin, int led_pin, bool led_a
   }
   if (_led_pin >= 0) pinMode(_led_pin, OUTPUT);
   setQuiet(_quiet);
-  outputs(0);
+  setBuzzer(0);
+  setLed(false);
 }
 
 void TapPlayer::setQuiet(bool quiet) {
@@ -26,15 +27,14 @@ void TapPlayer::setQuiet(bool quiet) {
   if (_en_pin >= 0) digitalWrite(_en_pin, _quiet ? LOW : HIGH);
 }
 
-void TapPlayer::outputs(uint16_t freq) {
-  if (_buzzer_pin >= 0) {
-    if (freq && !_quiet) tone(_buzzer_pin, freq);
-    else noTone(_buzzer_pin);
-  }
-  if (_led_pin >= 0 && _led_mirror) {
-    bool on = freq != 0;
-    digitalWrite(_led_pin, on == _led_high ? HIGH : LOW);
-  }
+void TapPlayer::setBuzzer(uint16_t freq) {
+  if (_buzzer_pin < 0) return;
+  if (freq && !_quiet) tone(_buzzer_pin, freq);
+  else noTone(_buzzer_pin);
+}
+
+void TapPlayer::setLed(bool on) {
+  if (_led_pin >= 0) digitalWrite(_led_pin, on == _led_high ? HIGH : LOW);
 }
 
 static int readNum(const char*& p) {
@@ -43,47 +43,44 @@ static int readNum(const char*& p) {
   return n;
 }
 
-void TapPlayer::play(const char* rtttl) {
-  stop();
-  if (rtttl == nullptr || *rtttl == 0) return;
-  strncpy(_buf, rtttl, sizeof(_buf) - 1);
-  _buf[sizeof(_buf) - 1] = 0;
-
-  // name section
-  const char* p = strchr(_buf, ':');
-  if (!p) return;
-  p++;
-  // defaults section
-  _def_dur = 4; _def_oct = 6; _bpm = 63;
-  while (*p && *p != ':') {
-    char key = tolower((unsigned char)*p);
-    if (p[1] == '=') {
-      p += 2;
-      int v = readNum(p);
-      if (key == 'd' && v > 0) _def_dur = v;
-      else if (key == 'o' && v >= 3 && v <= 8) _def_oct = v;
-      else if (key == 'b' && v > 0) _bpm = v;
+bool TapPlayer::Track::start(const char* rtttl) {
+  playing = false;
+  p = nullptr;
+  if (rtttl == nullptr) return false;
+  const char* s = strchr(rtttl, ':');   // skip name
+  if (!s) return false;
+  s++;
+  def_dur = 4; def_oct = 6; bpm = 63;
+  while (*s && *s != ':') {             // defaults section
+    char key = tolower((unsigned char)*s);
+    if (s[1] == '=') {
+      s += 2;
+      int v = readNum(s);
+      if (key == 'd' && v > 0) def_dur = v;
+      else if (key == 'o' && v >= 3 && v <= 8) def_oct = v;
+      else if (key == 'b' && v > 0) bpm = v;
     } else {
-      p++;
+      s++;
     }
-    if (*p == ',') p++;
+    if (*s == ',') s++;
   }
-  if (*p != ':') return;
-  _p = p + 1;
-  _playing = nextNote();
+  if (*s != ':') return false;
+  p = s + 1;
+  playing = true;
+  return true;
 }
 
-bool TapPlayer::nextNote() {
-  const char* p = _p;
-  while (*p == ',' || *p == ' ') p++;
-  if (*p == 0) return false;
+bool TapPlayer::Track::next(uint16_t& freq, unsigned long now) {
+  const char* s = p;
+  while (*s == ',' || *s == ' ') s++;
+  if (*s == 0) return false;
 
-  int dur = readNum(p);
-  if (dur == 0) dur = _def_dur;
-  unsigned long ms = (60000UL * 4) / _bpm / dur;
+  int dur = readNum(s);
+  if (dur == 0) dur = def_dur;
+  unsigned long ms = (60000UL * 4) / bpm / dur;
 
   int semis = -1;   // -1 = pause
-  switch (tolower((unsigned char)*p)) {
+  switch (tolower((unsigned char)*s)) {
     case 'c': semis = 0; break;
     case 'd': semis = 2; break;
     case 'e': semis = 4; break;
@@ -94,42 +91,78 @@ bool TapPlayer::nextNote() {
     case 'p': semis = -1; break;
     default:  return false;   // malformed: stop rather than guess
   }
-  p++;
-  if (*p == '#') { if (semis >= 0) semis++; p++; }
+  s++;
+  if (*s == '#') { if (semis >= 0) semis++; s++; }
   bool dotted = false;
-  if (*p == '.') { dotted = true; p++; }
-  int oct = isdigit((unsigned char)*p) ? readNum(p) : _def_oct;
-  if (*p == '.') { dotted = true; p++; }
+  if (*s == '.') { dotted = true; s++; }
+  int oct = isdigit((unsigned char)*s) ? readNum(s) : def_oct;
+  if (*s == '.') { dotted = true; s++; }
   if (dotted) ms += ms / 2;
-  while (*p && *p != ',') p++;   // skip anything unexpected up to the separator
-  _p = p;
+  while (*s && *s != ',') s++;   // skip anything unexpected up to the separator
+  p = s;
 
-  uint16_t freq = 0;
+  freq = 0;
   if (semis >= 0) {
     if (semis == 12) { semis = 0; oct++; }
     uint32_t f = OCT4[semis];
     if (oct >= 4) f <<= (oct - 4); else f >>= (4 - oct);
     freq = (uint16_t)f;
   }
-  outputs(freq);
-  _note_end = millis() + ms;
+  note_end = now + ms;
   return true;
 }
 
+void TapPlayer::advance(Track& t, bool is_led_track) {
+  uint16_t freq = 0;
+  if (t.next(freq, millis())) {
+    if (is_led_track) {
+      setLed(freq != 0);
+    } else {
+      setBuzzer(freq);
+      if (_mirror) setLed(freq != 0);
+    }
+  } else {
+    t.playing = false;
+    if (is_led_track) {
+      setLed(false);
+    } else {
+      setBuzzer(0);
+      if (_mirror) setLed(false);
+    }
+  }
+}
+
+void TapPlayer::play(const char* rtttl, const char* led_rtttl) {
+  stop();
+  if (rtttl && *rtttl) {
+    strncpy(_buf, rtttl, sizeof(_buf) - 1);
+    _buf[sizeof(_buf) - 1] = 0;
+    if (_buz.start(_buf)) advance(_buz, false);
+  }
+  _mirror = (led_rtttl == nullptr);
+  if (!_mirror && *led_rtttl) {
+    strncpy(_led_buf, led_rtttl, sizeof(_led_buf) - 1);
+    _led_buf[sizeof(_led_buf) - 1] = 0;
+    if (_led.start(_led_buf)) advance(_led, true);
+  }
+}
+
 void TapPlayer::loop() {
-  if (!_playing) return;
-  if ((long)(millis() - _note_end) < 0) return;
-  if (!nextNote()) stop();
+  unsigned long now = millis();
+  if (_buz.playing && (long)(now - _buz.note_end) >= 0) advance(_buz, false);
+  if (_led.playing && (long)(now - _led.note_end) >= 0) advance(_led, true);
 }
 
 void TapPlayer::sideTone(bool on) {
-  _playing = false;
-  _p = nullptr;
-  outputs(on ? 1760 : 0);
+  _buz.playing = _led.playing = false;
+  _mirror = true;
+  setBuzzer(on ? 1760 : 0);
+  setLed(on);
 }
 
 void TapPlayer::stop() {
-  _playing = false;
-  _p = nullptr;
-  outputs(0);
+  _buz.playing = _led.playing = false;
+  _mirror = true;
+  setBuzzer(0);
+  setLed(false);
 }

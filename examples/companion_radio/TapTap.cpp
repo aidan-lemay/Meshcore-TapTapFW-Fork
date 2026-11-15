@@ -30,11 +30,13 @@ void TapTapSettings::setDefaults() {
   repeat_gap_secs = 5;
   cw_wpm = TAPTAP_CW_WPM_DEFAULT;
   slot_beep_ms = TAPTAP_SLOT_MS_DEFAULT;
+  slot_flash_ms = TAPTAP_SLOT_MS_DEFAULT;
 }
 
 void TapTapSettings::sanitise() {
   if (cw_wpm < TAPTAP_CW_WPM_MIN || cw_wpm > TAPTAP_CW_WPM_MAX) cw_wpm = TAPTAP_CW_WPM_DEFAULT;
   if (slot_beep_ms < TAPTAP_SLOT_MS_MIN || slot_beep_ms > TAPTAP_SLOT_MS_MAX) slot_beep_ms = TAPTAP_SLOT_MS_DEFAULT;
+  if (slot_flash_ms < TAPTAP_SLOT_MS_MIN || slot_flash_ms > TAPTAP_SLOT_MS_MAX) slot_flash_ms = TAPTAP_SLOT_MS_DEFAULT;
   if (repeat_gap_secs == 0) repeat_gap_secs = 5;
   for (int i = 0; i < TAPTAP_MAX_CANNED; i++) canned[i][TAPTAP_CANNED_LEN - 1] = 0;
   ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
@@ -222,14 +224,21 @@ int matchCanned(const char* text, const TapTapSettings& st) {
   return -1;
 }
 
-void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms) {
-  // 1 = dash: high tone, full length (quarter note); 0 = dot: low tone, half length (eighth note).
-  // Gaps are dot length. Quarter note length = 60000 / bpm = beep_ms.
-  if (beep_ms < TAPTAP_SLOT_MS_MIN || beep_ms > TAPTAP_SLOT_MS_MAX) beep_ms = TAPTAP_SLOT_MS_DEFAULT;
-  int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=%d:", 60000 / beep_ms);
+static void buildSlot(int idx, char* out, size_t out_len, int ms, const char* one, const char* zero) {
+  // quarter note = ms (b = 60000 / ms), eighth = ms / 2
+  if (ms < TAPTAP_SLOT_MS_MIN || ms > TAPTAP_SLOT_MS_MAX) ms = TAPTAP_SLOT_MS_DEFAULT;
+  int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=%d:", 60000 / ms);
   for (int bit = 2; bit >= 0 && pos < (int)out_len; bit--) {
-    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "4a6" : "8f5", bit ? ",8p," : "");
+    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? one : zero, bit ? ",8p," : "");
   }
+}
+
+void buildSlotBeeps(int idx, char* out, size_t out_len, int beep_ms) {
+  buildSlot(idx, out, out_len, beep_ms, "4a6", "4f5");    // same length, high / low
+}
+
+void buildSlotFlashes(int idx, char* out, size_t out_len, int flash_ms) {
+  buildSlot(idx, out, out_len, flash_ms, "4a6", "8a6");   // dash / dot (pitch unused: LED only)
 }
 
 }  // namespace taptap
