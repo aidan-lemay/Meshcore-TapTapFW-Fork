@@ -35,9 +35,33 @@ static void test_taptap_and_player() {
   g_ms=600; p.loop(); assert(g_led==0); g_ms=1100; p.loop(); assert(g_led==1); // pause 500ms then dotted a
   g_ms=1100+749; p.loop(); assert(p.isPlaying()); g_ms=1100+750; p.loop(); assert(!p.isPlaying());
   p.setQuiet(false); g_ms=2000; p.play("x:d=8,o=5,b=120:c#6"); printf("c#6=%d\n", g_freq); assert(g_freq==1108);
-  { taptap::buildCwRtttl("sos hi", buf, sizeof buf); assert(strcmp(buf,"CW:d=8,o=6,b=480:a,p,a,p,a,4p.,4a.,p,4a.,p,4a.,4p.,a,p,a,p,a,2p.,p,a,p,a,p,a,p,a,4p.,a,p,a")==0);
+  { taptap::buildCwRtttl("sos hi", buf, sizeof buf); assert(strcmp(buf,"CW:d=8,o=6,b=475:a,p,a,p,a,4p.,4a.,p,4a.,p,4a.,4p.,a,p,a,p,a,2p.,p,a,p,a,p,a,p,a,4p.,a,p,a")==0);
     g_ms=5000; p.play(buf); int steps=0; while(p.isPlaying()){ g_ms+=1; p.loop(); steps++; } printf("sos hi plays %d ms\n", steps); }
   
+  // slot pattern: 500ms beeps, 250ms gaps -> 3*500 + 2*250 = 2000ms, LED on for each beep
+  {
+    TapPlayer q; q.begin(25, 37, 24, true);
+    taptap::buildIndexTone(5, r, sizeof r);        // 101
+    g_ms = 20000; q.play(r);
+    int on_ms = 0, total = 0;
+    while (q.isPlaying()) { if (g_led) on_ms++; g_ms++; q.loop(); total++; }
+    printf("slot tone: total %dms, lit %dms\n", total, on_ms);
+    assert(total == 2000 && on_ms == 1500);
+  }
+  // CW speed: 12 wpm -> 100ms dit; 2 wpm -> 600ms dit
+  {
+    TapPlayer q; q.begin(25, 37, 24, true);
+    taptap::buildCwRtttl("e", buf, sizeof buf, 12); g_ms = 30000; q.play(buf);
+    int t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("12wpm dit %dms\n", t); assert(t == 100);
+    taptap::buildCwRtttl("e", buf, sizeof buf, 2); g_ms = 40000; q.play(buf);
+    t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("2wpm dit %dms\n", t); assert(t == 600);
+    assert(taptap::buildCwRtttl("e", buf, sizeof buf, 0) > 0 && strstr(buf, "b=475"));  // out of range -> default
+  }
+  // older (shorter) settings: fields past the end keep defaults; sanitise fixes junk
+  {
+    TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.sanitise(); assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT);
+  }
+
 }
 
 static std::string ev;

@@ -28,10 +28,18 @@ void TapTapSettings::setDefaults() {
   target.channel_idx = 0;   // Public
   repeat_alert = 0;
   repeat_gap_secs = 5;
+  cw_wpm = TAPTAP_CW_WPM_DEFAULT;
+}
+
+void TapTapSettings::sanitise() {
+  if (cw_wpm < TAPTAP_CW_WPM_MIN || cw_wpm > TAPTAP_CW_WPM_MAX) cw_wpm = TAPTAP_CW_WPM_DEFAULT;
+  if (repeat_gap_secs == 0) repeat_gap_secs = 5;
+  for (int i = 0; i < TAPTAP_MAX_CANNED; i++) canned[i][TAPTAP_CANNED_LEN - 1] = 0;
+  ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
 }
 
 bool TapTapSettings::isValid() const {
-  return magic == MAGIC && version == VERSION && buz_mode <= TAP_BUZ_OFF && repeat_gap_secs > 0 &&
+  return magic == MAGIC && version == VERSION && buz_mode <= TAP_BUZ_OFF &&
          canned_count <= TAPTAP_MAX_CANNED && target.type <= TAP_TARGET_CONTACT;
 }
 
@@ -108,13 +116,16 @@ static bool append(char* out, size_t out_len, int& pos, const char* s) {
   return true;
 }
 
-// Timing: d=8 at b=480 -> one 'unit' (an 8th note) = 62.5ms (~19 WPM).
+// Timing: one Morse 'unit' = 1200/wpm ms and is an 8th note, so b = 25 * wpm (19 WPM -> b=475, 63ms).
 // dit = 1 unit, dah = 3 units ("4a." = dotted quarter), element gap = 1,
 // letter gap = 3 ("4p."), word gap = 7 ("2p.,p").
-int buildCwRtttl(const char* text, char* out, size_t out_len) {
+int buildCwRtttl(const char* text, char* out, size_t out_len, int wpm) {
   int pos = 0;
   out[0] = 0;
-  if (!append(out, out_len, pos, "CW:d=8,o=6,b=480:")) return 0;
+  if (wpm < TAPTAP_CW_WPM_MIN || wpm > TAPTAP_CW_WPM_MAX) wpm = TAPTAP_CW_WPM_DEFAULT;
+  char header[32];
+  snprintf(header, sizeof(header), "CW:d=8,o=6,b=%d:", wpm * 25);
+  if (!append(out, out_len, pos, header)) return 0;
   const size_t header_len = pos;
 
   bool pending_word_gap = false;
@@ -210,9 +221,10 @@ int matchCanned(const char* text, const TapTapSettings& st) {
 }
 
 void buildIndexTone(int idx, char* out, size_t out_len) {
-  int pos = snprintf(out, out_len, "TapSel:d=32,o=5,b=220:");
+  // each beep 500ms (quarter note at b=120), 250ms gap (eighth rest)
+  int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=120:");
   for (int bit = 2; bit >= 0 && pos < (int)out_len; bit--) {
-    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "16a6" : "16f5", bit ? ",16p," : "");
+    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "4a6" : "4f5", bit ? ",8p," : "");
   }
 }
 

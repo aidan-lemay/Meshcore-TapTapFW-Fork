@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include <stddef.h>  // offsetof
 
 #include <Arduino.h> // needed for PlatformIO
 #ifdef ENABLE_WIFI_INTERFACE
@@ -997,11 +998,13 @@ void MyMesh::begin() {
   _active_ble_pin = _prefs.ble_pin;
 
 #ifdef TAPTAP_FEATURES
-  if (_store->loadFile(TAPTAP_SETTINGS_FILE, &_taptap, sizeof(_taptap)) != sizeof(_taptap) || !_taptap.isValid()) {
+  {
+    // Files written by older builds are shorter: fields they don't have keep their defaults.
     _taptap.setDefaults();
+    size_t n = _store->loadFile(TAPTAP_SETTINGS_FILE, &_taptap, sizeof(_taptap));
+    if (n < offsetof(TapTapSettings, cw_wpm) || !_taptap.isValid()) _taptap.setDefaults();
+    _taptap.sanitise();
   }
-  for (int i = 0; i < TAPTAP_MAX_CANNED; i++) _taptap.canned[i][TAPTAP_CANNED_LEN - 1] = 0;
-  _taptap.ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
 #endif
 
   resetContacts();
@@ -2618,6 +2621,7 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "/rep [on|off|<secs>]  repeat alerts until clicked");
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
     tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
+    tapReply(ch_idx, contact, "/cw [<wpm>]  CW alert speed");
     return true;
   }
 
@@ -2727,6 +2731,23 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     if (*args) saveTapTap();
     snprintf(reply, sizeof(reply), "Repeat alerts: %s (every %us, single click to ack)",
              _taptap.repeat_alert ? "on" : "off", _taptap.repeat_gap_secs);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/cw", &args)) {
+    if (*args) {
+      int wpm = atoi(args);
+      if (wpm < TAPTAP_CW_WPM_MIN || wpm > TAPTAP_CW_WPM_MAX) {
+        snprintf(reply, sizeof(reply), "Usage: /cw <%d-%d wpm>", TAPTAP_CW_WPM_MIN, TAPTAP_CW_WPM_MAX);
+        tapReply(ch_idx, contact, reply);
+        return true;
+      }
+      _taptap.cw_wpm = wpm;
+      saveTapTap();
+    }
+    unsigned dit = 1200 / _taptap.cw_wpm;
+    snprintf(reply, sizeof(reply), "CW speed: %u wpm (dit %ums, dah %ums)", _taptap.cw_wpm, dit, dit * 3);
     tapReply(ch_idx, contact, reply);
     return true;
   }

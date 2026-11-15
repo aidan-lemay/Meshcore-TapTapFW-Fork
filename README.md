@@ -86,6 +86,8 @@ There are up to **8** preset messages. The defaults are:
 1. **2 clicks** to enter canned mode (rising three-note chirp).
 2. **1 click** steps to the next message. The device beeps the slot number as 3 binary digits:
    **high beep = 1, low beep = 0**. So slot 1 is low-low-low (`000`) and slot 6 is high-low-high (`101`).
+   Each beep (and LED flash) lasts **0.5 s** with 0.25 s gaps, so a pattern takes 2 s.
+   The LED flashes are all the same length, so when muted you can count the beeps but not tell 1s from 0s.
 3. **Hold 1.2 s** to send it to the [tap target](#commands). A rising "sent" tune means it was sent.
    A double low buzz means it failed (for example, no tap target set).
 
@@ -119,7 +121,7 @@ When a direct message or channel message arrives, the device alerts in the curre
 | Mode | What you hear |
 |---|---|
 | `rtttl` *(default)* | Your custom ringtone (`/rtttl`), or the built-in message chirp |
-| `cw` | The message text in **Morse code** (~19 WPM; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear when picking it with the button. So "All good" is a quick `000`. |
+| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear when picking it with the button. So "All good" is a quick `000`. |
 | `off` | No alert |
 
 - **Alerts play even while the app is connected.**
@@ -154,6 +156,8 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/rep on\|off` | Turn repeat-until-ack on or off |
 | `/rep <secs>` | Turn it on with a gap of 1–255 s between repeats |
 | `/play <rtttl>` | Play a melody on the device now (handy for trying ringtones) |
+| `/cw` | Show the CW alert speed |
+| `/cw <wpm>` | Set the CW alert speed, 1–40 words per minute (dit = 1200 / wpm ms: 19 → 63 ms, 12 → 100 ms, 2 → 600 ms) |
 | `/led` | Show LED settings |
 | `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off. When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
@@ -173,7 +177,7 @@ All of these settings are saved on the device and survive reboots.
 | Enter canned mode | quick rising chirp |
 | Leave canned / Morse mode | quick falling chirp |
 | Enter Morse mode | two short high beeps |
-| Slot selected | 3-bit pattern (high = 1, low = 0) |
+| Slot selected | 3-bit pattern (high = 1, low = 0), 0.5 s per beep |
 | Message sent | rising "sent" tune |
 | Error / failed | double low buzz |
 | Morse letter deleted | single low blip |

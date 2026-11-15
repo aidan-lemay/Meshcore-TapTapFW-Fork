@@ -14,6 +14,9 @@
 #define TAPTAP_RINGTONE_LEN   192    // incl. null terminator
 #define TAPTAP_CW_BUF_LEN     640    // max length of a generated CW RTTTL string
 #define TAPTAP_SETTINGS_FILE  "/taptap"
+#define TAPTAP_CW_WPM_DEFAULT 19
+#define TAPTAP_CW_WPM_MIN     1
+#define TAPTAP_CW_WPM_MAX     40
 
 enum TapBuzMode : uint8_t {
   TAP_BUZ_RTTTL = 0,
@@ -46,12 +49,15 @@ struct TapTapSettings {
   TapTarget target;
   uint8_t  repeat_alert;      // 1 = repeat incoming-message alerts until acknowledged (single click)
   uint8_t  repeat_gap_secs;   // pause between repeats
+  // --- fields below were added later; older (shorter) files load with these at defaults ---
+  uint8_t  cw_wpm;            // CW alert speed, words per minute
 
   static const uint32_t MAGIC = 0x50415454;  // 'TTAP'
   static const uint8_t  VERSION = 1;
 
   void setDefaults();
   bool isValid() const;
+  void sanitise();            // clamp fields that may be out of range (e.g. from older files)
 };
 
 namespace taptap {
@@ -67,8 +73,8 @@ namespace taptap {
   // Morse pattern (e.g. ".-") -> character ('A'), or 0 if unknown.
   char decodeMorse(const char* pattern);
 
-  // Builds an RTTTL melody that plays 'text' as Morse code. Returns length written.
-  int buildCwRtttl(const char* text, char* out, size_t out_len);
+  // Builds an RTTTL melody that plays 'text' as Morse code at 'wpm'. Returns length written.
+  int buildCwRtttl(const char* text, char* out, size_t out_len, int wpm = TAPTAP_CW_WPM_DEFAULT);
 
   // Parses "item1|item2|..." into settings.canned. Returns number of entries (0 = none valid).
   int parseCannedList(const char* s, TapTapSettings& st);

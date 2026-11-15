@@ -131,7 +131,7 @@ void UITask::alertIncoming(const char* body, bool is_channel) {
       // a known canned message: play its slot pattern, same as the tapper selection tone
       taptap::buildIndexTone(slot, _alert_melody, sizeof(_alert_melody));
     } else {
-      taptap::buildCwRtttl(body, _alert_melody, sizeof(_alert_melody));
+      taptap::buildCwRtttl(body, _alert_melody, sizeof(_alert_melody), st.cw_wpm);
     }
   } else if (st.ringtone[0]) {
     StrHelper::strncpy(_alert_melody, st.ringtone, sizeof(_alert_melody));
