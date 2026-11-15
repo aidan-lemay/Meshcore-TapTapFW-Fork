@@ -29,10 +29,12 @@ void TapTapSettings::setDefaults() {
   repeat_alert = 0;
   repeat_gap_secs = 5;
   cw_wpm = TAPTAP_CW_WPM_DEFAULT;
+  slot_beep_ms = TAPTAP_SLOT_MS_DEFAULT;
 }
 
 void TapTapSettings::sanitise() {
   if (cw_wpm < TAPTAP_CW_WPM_MIN || cw_wpm > TAPTAP_CW_WPM_MAX) cw_wpm = TAPTAP_CW_WPM_DEFAULT;
+  if (slot_beep_ms < TAPTAP_SLOT_MS_MIN || slot_beep_ms > TAPTAP_SLOT_MS_MAX) slot_beep_ms = TAPTAP_SLOT_MS_DEFAULT;
   if (repeat_gap_secs == 0) repeat_gap_secs = 5;
   for (int i = 0; i < TAPTAP_MAX_CANNED; i++) canned[i][TAPTAP_CANNED_LEN - 1] = 0;
   ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
@@ -220,9 +222,10 @@ int matchCanned(const char* text, const TapTapSettings& st) {
   return -1;
 }
 
-void buildIndexTone(int idx, char* out, size_t out_len) {
-  // each beep 500ms (quarter note at b=120), 250ms gap (eighth rest)
-  int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=120:");
+void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms) {
+  // beep = quarter note, gap = eighth rest; quarter note length = 60000 / bpm
+  if (beep_ms < TAPTAP_SLOT_MS_MIN || beep_ms > TAPTAP_SLOT_MS_MAX) beep_ms = TAPTAP_SLOT_MS_DEFAULT;
+  int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=%d:", 60000 / beep_ms);
   for (int bit = 2; bit >= 0 && pos < (int)out_len; bit--) {
     pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "4a6" : "4f5", bit ? ",8p," : "");
   }

@@ -17,6 +17,9 @@
 #define TAPTAP_CW_WPM_DEFAULT 19
 #define TAPTAP_CW_WPM_MIN     1
 #define TAPTAP_CW_WPM_MAX     40
+#define TAPTAP_SLOT_MS_DEFAULT 500
+#define TAPTAP_SLOT_MS_MIN     50
+#define TAPTAP_SLOT_MS_MAX     2000
 
 enum TapBuzMode : uint8_t {
   TAP_BUZ_RTTTL = 0,
@@ -50,7 +53,8 @@ struct TapTapSettings {
   uint8_t  repeat_alert;      // 1 = repeat incoming-message alerts until acknowledged (single click)
   uint8_t  repeat_gap_secs;   // pause between repeats
   // --- fields below were added later; older (shorter) files load with these at defaults ---
-  uint8_t  cw_wpm;            // CW alert speed, words per minute
+  uint8_t  cw_wpm;            // CW alert speed (spelled-out text), words per minute
+  uint16_t slot_beep_ms;      // slot pattern beep length (selection + matched-message alerts)
 
   static const uint32_t MAGIC = 0x50415454;  // 'TTAP'
   static const uint8_t  VERSION = 1;
@@ -86,6 +90,7 @@ namespace taptap {
   // Index of the canned slot whose text equals 'text' (case-insensitive, trimmed), or -1.
   int matchCanned(const char* text, const TapTapSettings& st);
 
-  // Melody that plays 3-bit binary of 'idx' (high tone = 1, low tone = 0). 'out' >= 64 bytes.
-  void buildIndexTone(int idx, char* out, size_t out_len);
+  // Melody that plays 3-bit binary of 'idx' (high tone = 1, low tone = 0), each beep 'beep_ms'
+  // long with a beep_ms/2 gap. 'out' >= 64 bytes.
+  void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_MS_DEFAULT);
 }

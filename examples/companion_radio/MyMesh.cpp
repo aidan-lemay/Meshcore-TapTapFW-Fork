@@ -2621,7 +2621,8 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "/rep [on|off|<secs>]  repeat alerts until clicked");
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
     tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
-    tapReply(ch_idx, contact, "/cw [<wpm>]  CW alert speed");
+    tapReply(ch_idx, contact, "/cw [<wpm>]  spelled-out CW alert speed");
+    tapReply(ch_idx, contact, "/slot [<ms>]  slot pattern beep length");
     return true;
   }
 
@@ -2748,6 +2749,22 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     }
     unsigned dit = 1200 / _taptap.cw_wpm;
     snprintf(reply, sizeof(reply), "CW speed: %u wpm (dit %ums, dah %ums)", _taptap.cw_wpm, dit, dit * 3);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/slot", &args)) {
+    if (*args) {
+      int ms = atoi(args);
+      if (ms < TAPTAP_SLOT_MS_MIN || ms > TAPTAP_SLOT_MS_MAX) {
+        snprintf(reply, sizeof(reply), "Usage: /slot <%d-%d ms>", TAPTAP_SLOT_MS_MIN, TAPTAP_SLOT_MS_MAX);
+        tapReply(ch_idx, contact, reply);
+        return true;
+      }
+      _taptap.slot_beep_ms = ms;
+      saveTapTap();
+    }
+    snprintf(reply, sizeof(reply), "Slot pattern: %ums beeps, %ums gaps", _taptap.slot_beep_ms, _taptap.slot_beep_ms / 2);
     tapReply(ch_idx, contact, reply);
     return true;
   }

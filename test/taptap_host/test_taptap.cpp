@@ -48,6 +48,13 @@ static void test_taptap_and_player() {
     printf("slot tone: total %dms, lit %dms\n", total, on_ms);
     assert(total == 2000 && on_ms == 1500);
   }
+  // slot speed is independent: 200ms beeps -> 3*200 + 2*100 = 800ms; CW speed setting doesn't affect it
+  {
+    TapPlayer q; q.begin(25, 37, 24, true);
+    taptap::buildIndexTone(0, r, sizeof r, 200); g_ms = 25000; q.play(r);
+    int t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("slot 200ms: %dms\n", t); assert(t == 800);
+    taptap::buildIndexTone(0, r, sizeof r, 9999); assert(strstr(r, "b=120:"));   // out of range -> 500ms default
+  }
   // CW speed: 12 wpm -> 100ms dit; 2 wpm -> 600ms dit
   {
     TapPlayer q; q.begin(25, 37, 24, true);
@@ -59,7 +66,8 @@ static void test_taptap_and_player() {
   }
   // older (shorter) settings: fields past the end keep defaults; sanitise fixes junk
   {
-    TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.sanitise(); assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT);
+    TapTapSettings s2; s2.setDefaults(); s2.cw_wpm = 0; s2.slot_beep_ms = 7; s2.sanitise();
+    assert(s2.cw_wpm == TAPTAP_CW_WPM_DEFAULT && s2.slot_beep_ms == TAPTAP_SLOT_MS_DEFAULT);
   }
 
 }

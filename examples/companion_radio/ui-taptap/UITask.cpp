@@ -129,7 +129,7 @@ void UITask::alertIncoming(const char* body, bool is_channel) {
     int slot = taptap::matchCanned(body, st);
     if (slot >= 0) {
       // a known canned message: play its slot pattern, same as the tapper selection tone
-      taptap::buildIndexTone(slot, _alert_melody, sizeof(_alert_melody));
+      taptap::buildIndexTone(slot, _alert_melody, sizeof(_alert_melody), st.slot_beep_ms);
     } else {
       taptap::buildCwRtttl(body, _alert_melody, sizeof(_alert_melody), st.cw_wpm);
     }
@@ -201,7 +201,7 @@ void UITask::handleButtonShortPress() {
     }
     _canned_idx = (_canned_idx + 1) % st.canned_count;
     char tone[80];
-    taptap::buildIndexTone(_canned_idx, tone, sizeof(tone));
+    taptap::buildIndexTone(_canned_idx, tone, sizeof(tone), st.slot_beep_ms);
     playTone(tone);
     setStatus("[%d] %s", _canned_idx + 1, st.canned[_canned_idx]);
     return;
