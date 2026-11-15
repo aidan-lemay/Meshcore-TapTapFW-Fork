@@ -120,25 +120,23 @@ bool UITask::recentlyAlerted(uint32_t h) {
 bool UITask::buildAlert(const char* body, bool is_channel, bool content_only,
                         char* mel, size_t mel_len, char* led, size_t led_len) {
   TapTapSettings& st = the_mesh.getTapTap();
-  bool split = false;
   mel[0] = 0;
+  int slot = taptap::matchCanned(body, st);
+  if (slot >= 0) {
+    // a known canned message: play its slot pattern (any buzzer mode), same as the tapper selection
+    taptap::buildSlotBeeps(slot, mel, mel_len, st.slot_beep_ms);
+    taptap::buildSlotFlashes(slot, led, led_len, st.slot_flash_ms);
+    return true;
+  }
   if (content_only || st.buz_mode == TAP_BUZ_CW) {
-    int slot = taptap::matchCanned(body, st);
-    if (slot >= 0) {
-      // a known canned message: play its slot pattern, same as the tapper selection
-      taptap::buildSlotBeeps(slot, mel, mel_len, st.slot_beep_ms);
-      taptap::buildSlotFlashes(slot, led, led_len, st.slot_flash_ms);
-      split = true;
-    } else {
-      taptap::buildCwRtttl(body, mel, mel_len, st.cw_wpm);
-    }
+    taptap::buildCwRtttl(body, mel, mel_len, st.cw_wpm);
   } else if (st.ringtone[0]) {
     StrHelper::strncpy(mel, st.ringtone, mel_len);
   }
   if (mel[0] == 0) {   // nothing encodable / no custom ringtone
     StrHelper::strncpy(mel, is_channel ? TONE_MSG_CHANNEL : TONE_MSG_DM, mel_len);
   }
-  return split;
+  return false;
 }
 
 void UITask::playAlert() {
@@ -186,8 +184,9 @@ void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_det
 }
 
 void UITask::onQueueSizeChanged(int msgcount) {
+  // Note: the queue emptying is NOT treated as an acknowledgement. A connected app downloads
+  // messages the moment they arrive, which would cut the alert off after its first note.
   _msgcount = msgcount;
-  if (msgcount == 0 && _alert_pending) ackAlert();   // read in the app: stop repeating
 }
 
 /* ---------------------------------- buttons ---------------------------------- */

@@ -126,8 +126,13 @@ When a direct message or channel message arrives, the device alerts in the curre
 | Mode | What you hear |
 |---|---|
 | `rtttl` *(default)* | Your custom ringtone (`/rtttl`), or the built-in message chirp |
-| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear and see when picking it with the button. So "All good" is low-low-low with three short flashes. The spelled-out Morse speed (`/cw`) and the slot pattern timing (`/slot`) are separate settings. |
+| `cw` | The message text in **Morse code** (19 WPM by default, adjustable with `/cw`; the sender name is not played) |
 | `off` | No alert |
+
+In `rtttl` and `cw` modes, a message that **matches one of your canned messages** (ignoring case and
+surrounding spaces) plays that slot's **3-bit pattern** instead, the same one you hear and see when picking
+it with the button. So "All good" is low-low-low with three short flashes. The spelled-out Morse speed
+(`/cw`) and the slot pattern timing (`/slot`) are separate settings.
 
 - **Alerts play even while the app is connected.**
 - **The LED flashes with every note** (for slot patterns, with its own dot/dash timing), so alerts are visible when muted (4 clicks).
@@ -135,7 +140,8 @@ When a direct message or channel message arrives, the device alerts in the curre
   whatever `/buz` is set to: the slot pattern if it matches a canned message, otherwise Morse.
   It doesn't start a repeat-until-ack cycle. If nothing has been received since power-on, you get the error buzz.
 - **Repeat until acknowledged** (`/rep on`): the alert repeats every *N* seconds (default 5)
-  until you **single-click**, or until you read the messages in the app.
+  until you **single-click**. Reading the message in the app doesn't stop it, because the app downloads
+  messages as soon as they arrive.
 - If the same text arrives again within 30 s (resends, or the same message on several routes), it only alerts once.
 - If a new message arrives while one is still playing, the newest plays straight after. Incoming
   alerts are held while you're keying Morse and play when you leave Morse mode.
@@ -272,7 +278,7 @@ git merge upstream/main
 
 New in this edition:
 
-- **Canned-slot alerts**: in CW mode, incoming messages that match a canned message play the slot pattern instead of the full text.
+- **Canned-slot alerts**: incoming messages that match a canned message play the slot pattern instead of the ringtone or full text.
 - **Replay the last message on 3 clicks** (GPS moved to the app).
 - **Separate buzzer and LED timing** for the slot pattern (`/slot beep`, `/slot flash`).
 - **Mute/unmute on 4 clicks**, saved across reboots.
