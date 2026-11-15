@@ -2897,8 +2897,8 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
   if (tapCmd(text, "/export", &args)) {
     char spec[80];
     if (!tapTargetSpec(spec, sizeof(spec))) spec[0] = 0;
-    static char lines[12][TAPTAP_EXPORT_LINE];   // static: keep 1.4KB off the loop stack
-    int n = taptap::exportSettings(_taptap, spec, lines, 12);
+    static char lines[24][TAPTAP_EXPORT_LINE];   // static: keep it off the loop stack. worst case ~22 lines
+    int n = taptap::exportSettings(_taptap, spec, lines, 24);
     tapReply(ch_idx, contact, "Copy each line below into a message and send it to import:");
     for (int k = 0; k < n; k++) tapReply(ch_idx, contact, lines[k]);
     return true;
