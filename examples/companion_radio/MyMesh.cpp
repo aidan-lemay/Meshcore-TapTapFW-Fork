@@ -996,6 +996,14 @@ void MyMesh::begin() {
 
   _active_ble_pin = _prefs.ble_pin;
 
+#ifdef TAPTAP_FEATURES
+  if (_store->loadFile(TAPTAP_SETTINGS_FILE, &_taptap, sizeof(_taptap)) != sizeof(_taptap) || !_taptap.isValid()) {
+    _taptap.setDefaults();
+  }
+  for (int i = 0; i < TAPTAP_MAX_CANNED; i++) _taptap.canned[i][TAPTAP_CANNED_LEN - 1] = 0;
+  _taptap.ringtone[TAPTAP_RINGTONE_LEN - 1] = 0;
+#endif
+
   resetContacts();
   _store->loadContacts(this);
   bootstrapRTCfromContacts();
@@ -1144,6 +1152,15 @@ void MyMesh::handleCmdFrame(size_t len) {
       int tlen = len - i;
       uint32_t est_timeout;
       text[tlen] = 0; // ensure null
+#ifdef TAPTAP_FEATURES
+      if (txt_type == TXT_TYPE_PLAIN && handleTapCommand(text, -1, recipient)) {
+        out_frame[0] = RESP_CODE_SENT;    // consumed locally, never transmitted
+        memset(&out_frame[1], 0, 9);
+        _serial->writeFrame(out_frame, 10);
+        tapReplyDone();
+        return;
+      }
+#endif
       int result;
       uint32_t expected_ack;
       if (txt_type == TXT_TYPE_CLI_DATA || txt_type == TXT_TYPE_CLI_COMMAND) {
@@ -1187,6 +1204,19 @@ void MyMesh::handleCmdFrame(size_t len) {
     if (txt_type != TXT_TYPE_PLAIN) {
       writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
     } else {
+#ifdef TAPTAP_FEATURES
+      if (len > i) {
+        char cmd_text[MAX_FRAME_SIZE + 1];
+        int tlen = len - i;
+        memcpy(cmd_text, text, tlen);
+        cmd_text[tlen] = 0;
+        if (handleTapCommand(cmd_text, channel_idx, NULL)) {
+          writeOKFrame();               // consumed locally, never transmitted
+          tapReplyDone();
+          return;
+        }
+      }
+#endif
       ChannelDetails channel;
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
@@ -2452,3 +2482,268 @@ bool MyMesh::advert() {
 bool MyMesh::hasPendingWork() const {
   return _mgr->getOutboundTotal() > 0 || dirty_contacts_expiry != 0;
 }
+
+#ifdef TAPTAP_FEATURES
+/* ------------------------------- TapTap ---------------------------------------- */
+
+void MyMesh::saveTapTap() {
+  _store->saveFile(TAPTAP_SETTINGS_FILE, &_taptap, sizeof(_taptap));
+  if (_listener) _listener->onTapSettingsChanged();
+}
+
+static bool isZeroKey(const uint8_t* k) {
+  for (int i = 0; i < PUB_KEY_SIZE; i++) if (k[i]) return false;
+  return true;
+}
+
+bool MyMesh::resolveTapTarget(int& ch_idx, ChannelDetails& ch, ContactInfo*& contact) {
+  TapTarget& t = _taptap.target;
+  ch_idx = -1;
+  contact = NULL;
+  if (t.type == TAP_TARGET_CONTACT) {
+    contact = lookupContactByPubKey(t.key, PUB_KEY_SIZE);
+    return contact != NULL;
+  }
+  bool pinned = !isZeroKey(t.key);
+  if (getChannel(t.channel_idx, ch) && ch.name[0] &&
+      (!pinned || memcmp(ch.channel.secret, t.key, PUB_KEY_SIZE) == 0)) {
+    ch_idx = t.channel_idx;
+    return true;
+  }
+  if (!pinned) return false;
+  for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {   // channel was moved by the app: follow it
+    if (getChannel(i, ch) && ch.name[0] && memcmp(ch.channel.secret, t.key, PUB_KEY_SIZE) == 0) {
+      t.channel_idx = i;
+      ch_idx = i;
+      return true;
+    }
+  }
+  return false;
+}
+
+void MyMesh::describeTapTarget(char* dest, size_t len) {
+  int ch_idx;
+  ChannelDetails ch;
+  ContactInfo* contact;
+  if (!resolveTapTarget(ch_idx, ch, contact)) {
+    snprintf(dest, len, "unavailable");
+  } else if (contact) {
+    snprintf(dest, len, "%s (device)", contact->name[0] ? contact->name : "Unknown");
+  } else {
+    snprintf(dest, len, "%s (channel)", ch.name[0] ? ch.name : "Unknown");
+  }
+}
+
+bool MyMesh::sendTapMessage(const char* text) {
+  int ch_idx;
+  ChannelDetails ch;
+  ContactInfo* contact;
+  if (!resolveTapTarget(ch_idx, ch, contact)) return false;
+
+  uint32_t ts = getRTCClock()->getCurrentTimeUnique();
+  if (contact) {
+    uint32_t expected_ack = 0, est_timeout = 0;
+    if (sendMessage(*contact, ts, 0, text, expected_ack, est_timeout) == MSG_SEND_FAILED) return false;
+    if (expected_ack) {
+      expected_ack_table[next_ack_idx].msg_sent = _ms->getMillis();
+      expected_ack_table[next_ack_idx].ack = expected_ack;
+      expected_ack_table[next_ack_idx].contact = contact;
+      next_ack_idx = (next_ack_idx + 1) % EXPECTED_ACK_TABLE_SIZE;
+    }
+    return true;
+  }
+  return sendGroupMessage(ts, ch.channel, _prefs.node_name, text, strlen(text));
+}
+
+// Queue a "System: ..." message back to the app, in the conversation the command was typed in.
+void MyMesh::tapReply(int ctx_channel_idx, const ContactInfo* ctx_contact, const char* text) {
+  uint8_t frame[MAX_FRAME_SIZE + 1];
+  int i = 0;
+  bool v3 = app_target_ver >= 3;
+  if (ctx_contact) {
+    frame[i++] = v3 ? RESP_CODE_CONTACT_MSG_RECV_V3 : RESP_CODE_CONTACT_MSG_RECV;
+    if (v3) { frame[i++] = 0; frame[i++] = 0; frame[i++] = 0; }
+    memcpy(&frame[i], ctx_contact->id.pub_key, 6);
+    i += 6;
+  } else {
+    frame[i++] = v3 ? RESP_CODE_CHANNEL_MSG_RECV_V3 : RESP_CODE_CHANNEL_MSG_RECV;
+    if (v3) { frame[i++] = 0; frame[i++] = 0; frame[i++] = 0; }
+    frame[i++] = (uint8_t)ctx_channel_idx;
+  }
+  frame[i++] = 0xFF;           // path_len: 'direct'
+  frame[i++] = TXT_TYPE_PLAIN;
+  uint32_t ts = getRTCClock()->getCurrentTime();
+  memcpy(&frame[i], &ts, 4);
+  i += 4;
+  int n = snprintf((char *)&frame[i], sizeof(frame) - i, "System: %s", text);
+  if (n < 0) return;
+  i += min(n, (int)(MAX_FRAME_SIZE - i));
+  addToOfflineQueue(frame, i);
+  _tap_reply_pending = true;
+}
+
+// call after the command's own response frame, so the app sees: response, then 'messages waiting'
+void MyMesh::tapReplyDone() {
+  if (_tap_reply_pending && _serial->isConnected()) {
+    uint8_t frame[1] = { PUSH_CODE_MSG_WAITING };
+    _serial->writeFrame(frame, 1);
+  }
+  _tap_reply_pending = false;
+}
+
+// matches "/cmd" or "/cmd args..." (case-insensitive); sets *args to the trimmed argument string
+static bool tapCmd(const char* text, const char* cmd, const char** args) {
+  size_t n = strlen(cmd);
+  if (strncasecmp(text, cmd, n) != 0) return false;
+  if (text[n] != 0 && text[n] != ' ') return false;
+  const char* a = &text[n];
+  while (*a == ' ') a++;
+  *args = a;
+  return true;
+}
+
+bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* contact) {
+  while (*text == ' ') text++;
+  if (text[0] != '/') return false;
+
+  char reply[TAPTAP_RINGTONE_LEN + 40];
+  const char* args;
+
+  if (tapCmd(text, "/help", &args)) {
+    tapReply(ch_idx, contact, "Commands:");
+    tapReply(ch_idx, contact, "/msg [?|a|b|...]  canned messages");
+    tapReply(ch_idx, contact, "/tap [here]  button send target");
+    tapReply(ch_idx, contact, "/buz [rtttl|cw|off]  alert style");
+    tapReply(ch_idx, contact, "/rtttl [<rtttl>|clear]  ringtone");
+    tapReply(ch_idx, contact, "/rep [on|off|<secs>]  repeat alerts until clicked");
+    tapReply(ch_idx, contact, "/play <rtttl>  play on device");
+    return true;
+  }
+
+  if (tapCmd(text, "/buz", &args)) {
+    uint8_t mode;
+    if (*args == 0) {
+      snprintf(reply, sizeof(reply), "Buzzer mode: %s", taptap::buzModeName(_taptap.buz_mode));
+    } else if (!taptap::parseBuzMode(args, mode)) {
+      snprintf(reply, sizeof(reply), "Usage: /buz rtttl|cw|off");
+    } else if (mode == _taptap.buz_mode) {
+      snprintf(reply, sizeof(reply), "Buzzer mode already %s", taptap::buzModeName(mode));
+    } else {
+      _taptap.buz_mode = mode;
+      saveTapTap();
+      snprintf(reply, sizeof(reply), "Buzzer mode set to %s", taptap::buzModeName(mode));
+    }
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/tap", &args)) {
+    if (strcasecmp(args, "here") == 0) {
+      TapTarget& t = _taptap.target;
+      if (contact) {
+        t.type = TAP_TARGET_CONTACT;
+        t.channel_idx = 0;
+        memcpy(t.key, contact->id.pub_key, PUB_KEY_SIZE);
+      } else {
+        ChannelDetails ch;
+        if (!getChannel(ch_idx, ch)) {
+          tapReply(ch_idx, contact, "Tap target: unavailable");
+          return true;
+        }
+        t.type = TAP_TARGET_CHANNEL;
+        t.channel_idx = ch_idx;
+        memcpy(t.key, ch.channel.secret, PUB_KEY_SIZE);
+      }
+      saveTapTap();
+    } else if (*args) {
+      tapReply(ch_idx, contact, "Usage: /tap [here]");
+      return true;
+    }
+    char desc[48];
+    describeTapTarget(desc, sizeof(desc));
+    snprintf(reply, sizeof(reply), "Tap target: %s", desc);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/msg", &args)) {
+    if (strncasecmp(args, "set ", 4) == 0) args += 4;
+    if (*args == 0 || strcmp(args, "?") == 0 || strcasecmp(args, "list") == 0) {
+      if (_taptap.canned_count == 0) {
+        tapReply(ch_idx, contact, "/msg error: no entries");
+      }
+      for (int k = 0; k < _taptap.canned_count; k++) {
+        snprintf(reply, sizeof(reply), "[%d] %s", k + 1, _taptap.canned[k]);
+        tapReply(ch_idx, contact, reply);
+      }
+      return true;
+    }
+    if (taptap::parseCannedList(args, _taptap) == 0) {
+      tapReply(ch_idx, contact, "Usage: /msg <item1|item2|...>");
+      return true;
+    }
+    saveTapTap();
+    snprintf(reply, sizeof(reply), "Saved %d canned messages", _taptap.canned_count);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/rtttl", &args) || tapCmd(text, "/ringtone", &args)) {
+    if (*args == 0) {
+      if (_taptap.ringtone[0]) snprintf(reply, sizeof(reply), "Ringtone: %s", _taptap.ringtone);
+      else snprintf(reply, sizeof(reply), "Ringtone not set (default)");
+    } else if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "default") == 0) {
+      _taptap.ringtone[0] = 0;
+      saveTapTap();
+      snprintf(reply, sizeof(reply), "Ringtone settings cleared");
+    } else {
+      bool truncated = false;
+      if (!taptap::normaliseRtttl(args, _taptap.ringtone, sizeof(_taptap.ringtone), &truncated)) {
+        snprintf(reply, sizeof(reply), "Not RTTTL. e.g. /rtttl d=8,o=6,b=180:c,e,g");
+      } else {
+        saveTapTap();
+        snprintf(reply, sizeof(reply), truncated ? "Global ringtone updated (truncated)" : "Global ringtone updated");
+      }
+    }
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/rep", &args)) {
+    if (strcasecmp(args, "on") == 0) {
+      _taptap.repeat_alert = 1;
+    } else if (strcasecmp(args, "off") == 0) {
+      _taptap.repeat_alert = 0;
+    } else if (*args) {
+      int secs = atoi(args);
+      if (secs < 1 || secs > 255) {
+        tapReply(ch_idx, contact, "Usage: /rep on|off|<1-255 secs>");
+        return true;
+      }
+      _taptap.repeat_alert = 1;
+      _taptap.repeat_gap_secs = secs;
+    }
+    if (*args) saveTapTap();
+    snprintf(reply, sizeof(reply), "Repeat alerts: %s (every %us, single click to ack)",
+             _taptap.repeat_alert ? "on" : "off", _taptap.repeat_gap_secs);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/play", &args)) {
+    char melody[TAPTAP_RINGTONE_LEN];
+    if (*args == 0) {
+      tapReply(ch_idx, contact, "/play usage: /play <rtttl>");
+    } else if (!taptap::normaliseRtttl(args, melody, sizeof(melody), NULL)) {
+      tapReply(ch_idx, contact, "Not RTTTL. e.g. /play d=8,o=6,b=180:c,e,g");
+    } else if (_listener && _listener->onPlayMelody(melody)) {
+      tapReply(ch_idx, contact, "Playing RTTTL locally");
+    } else {
+      tapReply(ch_idx, contact, "Audio unavailable");
+    }
+    return true;
+  }
+
+  return false;   // not ours: send as a normal message
+}
+#endif  // TAPTAP_FEATURES

@@ -155,6 +155,23 @@ File DataStore::openRead(FILESYSTEM* fs, const char* filename) {
 #endif
 }
 
+size_t DataStore::loadFile(const char* filename, void* dest, size_t max_len) {
+  if (!_fs->exists(filename)) return 0;
+  File f = openRead(_fs, filename);
+  if (!f) return 0;
+  size_t n = f.read((uint8_t*)dest, max_len);
+  f.close();
+  return n;
+}
+
+bool DataStore::saveFile(const char* filename, const void* src, size_t len) {
+  File f = openWrite(_fs, filename);
+  if (!f) return false;
+  size_t n = f.write((const uint8_t*)src, len);
+  f.close();
+  return n == len;
+}
+
 bool DataStore::removeFile(const char* filename) {
   return _fs->remove(filename);
 }

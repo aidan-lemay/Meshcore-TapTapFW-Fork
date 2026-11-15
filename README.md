@@ -1,128 +1,286 @@
-## About MeshCore
+# MeshCore TapTap Edition (unofficial)
 
-MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
+Headless, one-button messaging firmware for the **Seeed Studio T1000-E**, built on
+[MeshCore](https://github.com/meshcore-dev/MeshCore) companion radio **v1.18.0**.
 
-## 🔍 What is MeshCore?
+The T1000-E has no screen, so everything is done with the single button, the buzzer and the
+green LED: send canned messages, key in free text with Morse code, and get incoming
+messages played back as tunes, Morse (CW) or slot patterns. The LED mirrors every sound, so the
+device also works muted.
 
-MeshCore now supports a range of LoRa devices, allowing for easy flashing without the need to compile firmware manually. Users can flash a pre-built binary using tools like Adafruit ESPTool and interact with the network through a serial console.
-MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions, where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
+This is an independent, clean re-implementation of the TapTap feature set on current upstream
+MeshCore, plus extra features (see [What's different from TapTap](#whats-different-from-taptap)).
+It is not affiliated with the TapTap or MeshCore projects.
 
-## ⚡ Key Features
+It still works as a normal MeshCore BLE companion. Pair it with the MeshCore app as usual
+(default BLE PIN `123456`).
 
-* Multi-Hop Packet Routing
-  * Devices can forward messages across multiple nodes, extending range beyond a single radio's reach.
-  * Supports up to a configurable number of hops to balance network efficiency and prevent excessive traffic.
-  * Nodes use fixed roles where "Companion" nodes are not repeating messages at all to prevent adverse routing paths from being used.
-* Supports LoRa Radios – Works with Heltec, RAK Wireless, and other LoRa-based hardware.
-* Decentralized & Resilient – No central server or internet required; the network is self-healing.
-* Low Power Consumption – Ideal for battery-powered or solar-powered devices.
-* Simple to Deploy – Pre-built example applications make it easy to get started.
+---
 
-## 🎯 What Can You Use MeshCore For?
+## Contents
 
-* Off-Grid Communication: Stay connected even in remote areas.
-* Emergency Response & Disaster Recovery: Set up instant networks where infrastructure is down.
-* Outdoor Activities: Hiking, camping, and adventure racing communication.
-* Tactical & Security Applications: Military, law enforcement, and private security use cases.
-* IoT & Sensor Networks: Collect data from remote sensors and relay it back to a central location.
+- [Install](#install)
+- [Button controls](#button-controls)
+- [Sending: canned messages](#sending-canned-messages)
+- [Sending: Morse input](#sending-morse-input)
+- [Receiving: alerts](#receiving-alerts)
+- [Commands](#commands)
+- [Sounds and LED patterns](#sounds-and-led-patterns)
+- [Building from source](#building-from-source)
+- [How it's put together](#how-its-put-together)
+- [What's different from TapTap](#whats-different-from-taptap)
+- [Known limitations](#known-limitations)
+- [License and credits](#license-and-credits)
 
-## 🚀 How to Get Started
+---
 
-- Watch the [MeshCore QuickStart Playlist](https://www.youtube.com/watch?v=iaFltojJrAc&list=PLshzThxhw4O4WU_iZo3NmNZOv6KMrUuF9) by The Comms Channel
-- Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
-- Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
-- Flash the MeshCore firmware on a supported device.
-- Connect with a supported client.
+## Install
 
-For developers:
+1. Download `t1000e_taptap_ble-<version>.uf2` from [`release/`](release/) (or the Releases page).
+2. Connect the T1000-E by USB and **quickly double-press the button** to enter the bootloader.
+   A USB drive called `T1000-E` appears.
+3. Copy the `.uf2` onto the drive. The device reboots into the new firmware and plays the startup tune.
 
-- Install [PlatformIO](https://docs.platformio.org) in [Visual Studio Code](https://code.visualstudio.com).
-- Clone and open the MeshCore repository in Visual Studio Code.
-- See the example applications you can modify and run:
-  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or Wi-Fi.
-  - [KISS Modem](./examples/kiss_modem) - Serial KISS protocol bridge for host applications. ([protocol docs](./docs/kiss_modem_protocol.md))
-  - [Simple Repeater](./examples/simple_repeater) - Extends network coverage by relaying messages.
-  - [Simple Room Server](./examples/simple_room_server) - A simple BBS server for shared Posts.
-  - [Simple Secure Chat](./examples/simple_secure_chat) - Secure terminal based text communication between devices.
-  - [Simple Sensor](./examples/simple_sensor) - Remote sensor node with telemetry and alerting.
+Your contacts, channels and radio settings are kept when you move between this and stock MeshCore
+companion firmware (they use the same layout).
+Settings from the original TapTap firmware are **not** imported. Set them again with
+the [commands](#commands).
 
-The Simple Secure Chat example can be interacted with through the Serial Monitor in Visual Studio Code, or with a Serial USB Terminal on Android.
+To go back to stock firmware, flash the official MeshCore T1000-E companion `.uf2` the same way.
 
-## ⚡️ MeshCore Flasher
+---
 
-We have prebuilt firmware ready to flash on supported devices.
+## Button controls
 
-- Launch https://meshcore.io/flasher
-- Select a supported device
-- Flash one of the firmware types:
-  - Companion, Repeater or Room Server
-- Once flashing is complete, you can connect with one of the MeshCore clients below.
+| Gesture | Normal | Canned mode | Morse mode |
+|---|---|---|---|
+| **1 click** | Send advert. If an alert is pending: **acknowledge** it | Next canned message | *(keying: see below)* |
+| **2 clicks** | Enter **canned mode** | Switch to **Morse mode** | *(keying)* |
+| **3 clicks** | GPS on / off | GPS on / off | *(keying)* |
+| **4 clicks** | **Mute / unmute** buzzer | Mute / unmute | *(keying)* |
+| **Hold 1.2 s** | (first 8 s after boot: USB CLI rescue) | **Send** selected message | **Send** composed message |
+| **Hold 5 s** | Power off | Power off | Power off |
 
-## 📱 MeshCore Clients
+- The 1.2 s hold fires **as soon as 1.2 s is reached**. You don't need to let go, and letting go afterwards does nothing.
+- Canned mode exits after **15 s** with no clicks. Morse mode exits after **10 s** with no keying.
+- **Holding to power off while in canned mode also sends the selected message**, because the
+  1.2 s hold fires first. Leave canned mode (2 clicks, or wait 15 s) before powering off.
 
-**Companion Firmware**
+---
 
-The companion firmware can be connected to via BLE, USB or Wi-Fi depending on the firmware type you flashed.
+## Sending: canned messages
 
-- Web: https://app.meshcore.nz
-- Android: https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android
-- iOS: https://apps.apple.com/us/app/meshcore/id6742354151?platform=iphone
-- NodeJS: https://github.com/liamcottle/meshcore.js
-- Python: https://github.com/fdlamotte/meshcore-cli
+There are up to **8** preset messages. The defaults are:
 
-**Repeater and Room Server Firmware**
+| Slot | Pattern | Default text |
+|---|---|---|
+| 1 | `000` | All good |
+| 2 | `001` | Stop and wait |
+| 3 | `010` | Need assistance |
+| 4 | `011` | Emergency, send help |
+| 5 | `100` | Found water |
+| 6 | `101` | Returning to camp |
+| 7 | `110` | Running behind |
+| 8 | `111` | Found the point |
 
-The repeater and room server firmware can be set up via USB in the web config tool.
+1. **2 clicks** to enter canned mode (rising three-note chirp).
+2. **1 click** steps to the next message. The device beeps the slot number as 3 binary digits:
+   **high beep = 1, low beep = 0**. So slot 1 is low-low-low (`000`) and slot 6 is high-low-high (`101`).
+3. **Hold 1.2 s** to send it to the [tap target](#commands). A rising "sent" tune means it was sent.
+   A double low buzz means it failed (for example, no tap target set).
 
-- https://config.meshcore.io
+Change the messages from the app with `/msg`.
 
-They can also be managed via LoRa in the mobile app by using the Remote Management feature.
+---
 
-## 🛠 Hardware Compatibility
+## Sending: Morse input
 
-MeshCore is designed for devices listed in the [MeshCore Flasher](https://meshcore.io/flasher)
+Type any free-text message by keying Morse code on the button.
 
-## 📜 License
+1. **2 clicks** (canned mode), then **2 clicks** again. Two short high beeps mean you're in Morse mode.
+2. Key the message. A side-tone sounds and the LED lights while the button is held:
+   - **short press (< 250 ms)** = dit `.`
+   - **long press (250 ms – 1.2 s)** = dah `-`
+   - **pause 0.7 s** = end of letter
+   - **pause 2 s** = space between words
+   - **8 or more dits** (`........`, the Morse "error" sign) = **delete the last letter**
+   - an unrecognised letter gives a double low buzz and is dropped
+3. **Hold 1.2 s** to send. Messages are sent in CAPITALS, up to 63 characters.
 
-MeshCore is open-source software released under the MIT License. You are free to use, modify, and distribute it for personal and commercial projects.
+Supported characters: `A–Z`, `0–9`, `.` `,` `/` `?`.
 
-## Contributing
+---
 
-Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. It is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
+## Receiving: alerts
 
-Here are some general principles you should try to adhere to:
-* Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
-* No dynamic memory allocation, except during setup/begin functions.
-* Use the same brace and indenting style that's in the core source modules. (A .clang-format is probably going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
+When a direct message or channel message arrives, the device alerts in the current
+**buzzer mode** (`/buz`):
 
-Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
+| Mode | What you hear |
+|---|---|
+| `rtttl` *(default)* | Your custom ringtone (`/rtttl`), or the built-in message chirp |
+| `cw` | The message text in **Morse code** (~19 WPM; the sender name is not played). If the text **matches one of your canned messages** (ignoring case and surrounding spaces), the device plays that slot's **3-bit pattern** instead, the same one you hear when picking it with the button. So "All good" is a quick `000`. |
+| `off` | No alert |
 
-### Running unit tests
+- **Alerts play even while the app is connected.**
+- **The LED flashes with every note**, so alerts are visible when muted (4 clicks).
+- **Repeat until acknowledged** (`/rep on`): the alert repeats every *N* seconds (default 5)
+  until you **single-click**, or until you read the messages in the app.
+- If the same text arrives again within 30 s (resends, or the same message on several routes), it only alerts once.
+- If a new message arrives while one is still playing, the newest plays straight after. Incoming
+  alerts are held while you're keying Morse and play when you leave Morse mode.
 
-To run unit tests, run the following command:
+---
+
+## Commands
+
+Type these as a normal message **in the MeshCore app** (in any channel, or in a direct-message chat).
+The device handles them itself and never sends them over the mesh. Replies show up in the same
+chat from **"System"**. Anything starting with `/` that isn't listed here is sent as a normal message.
+
+| Command | What it does |
+|---|---|
+| `/help` | List commands |
+| `/msg` or `/msg ?` | List the canned messages |
+| `/msg First\|Second\|Third` | Replace the canned messages (1–8 items separated by `\|`, max 63 chars each) |
+| `/tap` | Show the current tap target (where button-sent messages go) |
+| `/tap here` | Make **this channel**, or **this contact** if typed in a direct chat, the tap target |
+| `/buz` | Show the buzzer mode |
+| `/buz rtttl\|cw\|off` | Set the alert style ([Receiving](#receiving-alerts)) |
+| `/rtttl` | Show the custom ringtone (`/ringtone` also works) |
+| `/rtttl <rtttl>` | Set the ringtone, e.g. `/rtttl d=8,o=6,b=180:c,e,g` or a full `Name:d=4,o=5,b=120:…` |
+| `/rtttl clear` | Go back to the built-in tones |
+| `/rep` | Show repeat-until-ack status |
+| `/rep on\|off` | Turn repeat-until-ack on or off |
+| `/rep <secs>` | Turn it on with a gap of 1–255 s between repeats |
+| `/play <rtttl>` | Play a melody on the device now (handy for trying ringtones) |
+
+The default tap target is the **Public** channel. A channel target follows the channel if you
+re-order channels in the app. If the channel or contact is deleted, sending fails with the error buzz.
+
+All of these settings are saved on the device and survive reboots.
+
+---
+
+## Sounds and LED patterns
+
+| Event | Sound |
+|---|---|
+| Startup | rising C-E-G |
+| Advert sent | single low beep |
+| Enter canned mode | quick rising chirp |
+| Leave canned / Morse mode | quick falling chirp |
+| Enter Morse mode | two short high beeps |
+| Slot selected | 3-bit pattern (high = 1, low = 0) |
+| Message sent | rising "sent" tune |
+| Error / failed | double low buzz |
+| Morse letter deleted | single low blip |
+| GPS on / off | rising / falling chirp |
+| Unmute / mute | up / down two-note (mute plays on the LED only) |
+| Acknowledge alert | very short high tick |
+| Power off | falling three notes |
+
+The green LED lights for every note above. When nothing is playing it shows a heartbeat:
+a short blink every 4 s, or a longer blink when messages are waiting or an alert is pending.
+
+---
+
+## Building from source
+
+Requirements: Python 3 and [PlatformIO Core](https://platformio.org/install/cli)
+(`pip install platformio`).
 
 ```bash
-pio test --environment native --verbose
+./build-taptap.sh
+# -> release/t1000e_taptap_ble-<version>.uf2   (drag-and-drop flashing)
+# -> release/t1000e_taptap_ble-<version>-ota.zip (nRF DFU / OTA)
 ```
 
-## Road-Map / To-Do
+Or by hand:
 
-There are a number of fairly major features in the pipeline, with no particular time-frames attached yet. In very rough chronological order:
-- [X] Companion radio: UI redesign
-- [X] Repeater + Room Server: add ACL's (like Sensor Node has)
-- [X] Standardise Bridge mode for repeaters
-- [ ] Repeater/Bridge: Standardise the Transport Codes for zoning/filtering
-- [X] Core + Repeater: enhanced zero-hop neighbour discovery
-- [ ] Core: round-trip manual path support
-- [ ] Companion + Apps: support for multiple sub-meshes (and 'off-grid' client repeat mode)
-- [ ] Core + Apps: support for LZW message compression
-- [ ] Core: dynamic CR (Coding Rate) for weak vs strong hops
-- [ ] Core: new framework for hosting multiple virtual nodes on one physical device
-- [ ] V2 protocol spec: discussion and consensus around V2 packet protocol, including path hashes, new encryption specs, etc
+```bash
+pio run -e t1000e_taptap_ble
+python3 bin/uf2conv/uf2conv.py .pio/build/t1000e_taptap_ble/firmware.hex -c -f 0xADA52840 -o firmware.uf2
+```
 
-## 📞 Get Support
+The version string is set by `FIRMWARE_VERSION` in the `t1000e_taptap_ble` section of
+[`variants/t1000-e/platformio.ini`](variants/t1000-e/platformio.ini).
 
-- Report bugs and request features on the [GitHub Issues](https://github.com/meshcore-dev/meshcore/issues) page.
-- Find additional guides and components on [my site](https://buymeacoffee.com/ripplebiz).
-- Join [MeshCore Discord](https://meshcore.gg) to chat with the developers and get help from the community.
+### Tests
+
+The core logic (Morse encode/decode, canned parsing and matching, RTTTL handling, the melody/LED
+player and the button state machine) has host-side tests that run on a PC without hardware:
+
+```bash
+test/taptap_host/run.sh
+```
+
+---
+
+## How it's put together
+
+All changes are additive and switched on by the `TAPTAP_FEATURES` build flag. Every other
+MeshCore build target compiles exactly as upstream.
+
+| Path | Role |
+|---|---|
+| [`examples/companion_radio/TapTap.h/.cpp`](examples/companion_radio/TapTap.h) | Settings struct, Morse encoder/decoder, canned-list parsing/matching, RTTTL helpers |
+| [`examples/companion_radio/ui-taptap/UITask.*`](examples/companion_radio/ui-taptap/UITask.cpp) | Button modes, canned + Morse input, alert logic, repeat-until-ack, LED heartbeat |
+| [`examples/companion_radio/ui-taptap/TapPlayer.*`](examples/companion_radio/ui-taptap/TapPlayer.cpp) | Non-blocking RTTTL player that drives the buzzer **and** mirrors notes on the LED |
+| [`examples/companion_radio/ui-taptap/Button.*`](examples/companion_radio/ui-taptap/Button.cpp) | Button driver: multi-click, 1.2 s / 5 s holds, raw keying mode for Morse |
+| [`examples/companion_radio/MyMesh.*`](examples/companion_radio/MyMesh.cpp) | Catches `/commands` in outgoing app messages, "System" replies, sending to the tap target |
+| [`examples/companion_radio/DataStore.*`](examples/companion_radio/DataStore.cpp) | Small `loadFile` / `saveFile` helpers |
+| [`variants/t1000-e/platformio.ini`](variants/t1000-e/platformio.ini) | The `t1000e_taptap_ble` build environment |
+| [`test/taptap_host/`](test/taptap_host/) | Host tests |
+
+TapTap settings live in `/taptap` on the device's internal flash. If the file is missing or from
+an incompatible version, it's replaced with the defaults.
+
+To update to a newer MeshCore:
+
+```bash
+git remote add upstream https://github.com/meshcore-dev/MeshCore.git   # once
+git fetch upstream
+git merge upstream/main
+```
+
+---
+
+## What's different from TapTap
+
+New in this edition:
+
+- **Canned-slot alerts**: in CW mode, incoming messages that match a canned message play the slot pattern instead of the full text.
+- **Mute/unmute on 4 clicks**, saved across reboots.
+- **LED mirrors all sounds**, so it works silently.
+- **Repeat-until-acknowledged alerts** (`/rep`).
+- **Alerts while the app is connected**.
+- `/rep`, `/rtttl clear`, `/msg ?`, and channel targets that follow re-ordered channels.
+- Built on MeshCore **v1.18.0**.
+
+Behaviour kept from TapTap: the button map for advert, canned mode, Morse mode, GPS and power off; the
+binary slot beeps; the tones; the commands; Morse alerts; the default canned messages.
+
+Not included: the LED blinking the current time in Morse after an advert, and TapTap's Easter
+egg (4 clicks is now mute).
+
+---
+
+## Known limitations
+
+- Built for the T1000-E only. Other boards (e.g. WisMesh Tag) need their own build environment in their `variants/*/platformio.ini`.
+- Messages sent with the button don't appear in the app's chat history.
+- Morse alerts play letters, digits and `. , / ?`. Other characters are skipped. Very long
+  messages are cut at about 640 characters of melody (around 60–90 letters).
+- The original TapTap settings files aren't read. Set your messages and options again with the commands.
+
+---
+
+## License and credits
+
+MIT, the same as MeshCore. See [`license.txt`](license.txt).
+
+- [MeshCore](https://github.com/meshcore-dev/MeshCore) by Scott Powell / rippleradios.com and contributors.
+  The original project README is kept as [`README.MeshCore.md`](README.MeshCore.md).
+- The feature set is modelled on the TapTap firmware for MeshCore trackers. This is an independent
+  implementation and is not endorsed by its authors.

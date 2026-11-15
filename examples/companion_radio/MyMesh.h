@@ -24,6 +24,9 @@
 
 #include "DataStore.h"
 #include "NodePrefs.h"
+#ifdef TAPTAP_FEATURES
+#include "TapTap.h"
+#endif
 
 #include <RTClib.h>
 #include <helpers/ArduinoHelpers.h>
@@ -105,6 +108,10 @@ public:
       virtual void onTraceRecv(mesh::Packet *pkt, uint32_t tag, uint32_t auth_code, uint8_t flags,
                                const uint8_t *path_snrs, const uint8_t *path_hashes, uint8_t path_len) { }
       virtual void onRawDataRecv(mesh::Packet *pkt) { }
+#ifdef TAPTAP_FEATURES
+      virtual bool onPlayMelody(const char* rtttl) { return false; }  // false = no audio
+      virtual void onTapSettingsChanged() { }
+#endif
       virtual ~Listener() { }
   };
 
@@ -215,6 +222,13 @@ public:
   // To check if there is pending work
   bool hasPendingWork() const;
 
+#ifdef TAPTAP_FEATURES
+  TapTapSettings& getTapTap() { return _taptap; }
+  void saveTapTap();
+  bool sendTapMessage(const char* text);              // send to the configured tap target
+  void describeTapTarget(char* dest, size_t len);     // "Name (channel|device)" or "unavailable"
+#endif
+
 private:
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
@@ -238,6 +252,15 @@ private:
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }
   void saveContacts();
+
+#ifdef TAPTAP_FEATURES
+  bool handleTapCommand(const char* text, int ctx_channel_idx, const ContactInfo* ctx_contact);
+  void tapReply(int ctx_channel_idx, const ContactInfo* ctx_contact, const char* text);
+  void tapReplyDone();
+  bool resolveTapTarget(int& ch_idx, ChannelDetails& ch, ContactInfo*& contact);
+  TapTapSettings _taptap;
+  bool _tap_reply_pending = false;
+#endif
 
   DataStore* _store;
   NodePrefs _prefs;
