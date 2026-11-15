@@ -154,6 +154,8 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/rep on\|off` | Turn repeat-until-ack on or off |
 | `/rep <secs>` | Turn it on with a gap of 1–255 s between repeats |
 | `/play <rtttl>` | Play a melody on the device now (handy for trying ringtones) |
+| `/led` | Show LED settings |
+| `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off. When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
 The default tap target is the **Public** channel. A channel target follows the channel if you
 re-order channels in the app. If the channel or contact is deleted, sending fails with the error buzz.
@@ -182,6 +184,11 @@ All of these settings are saved on the device and survive reboots.
 
 The green LED lights for every note above. When nothing is playing it shows a heartbeat:
 a short blink every 4 s, or a longer blink when messages are waiting or an alert is pending.
+Turn the heartbeat off with `/led standby off` if it gets in the way of reading messages on the LED.
+
+**Charging light:** the firmware never drives the LED for charging (the charge-detect pin is not
+used). Any light you see while charging comes from the device's charging circuit, so it can't be
+turned off from firmware.
 
 ---
 
@@ -272,6 +279,7 @@ egg (4 clicks is now mute).
 - Messages sent with the button don't appear in the app's chat history.
 - Morse alerts play letters, digits and `. , / ?`. Other characters are skipped. Very long
   messages are cut at about 640 characters of melody (around 60–90 letters).
+- The charging light can't be turned off (see [Sounds and LED patterns](#sounds-and-led-patterns)).
 - The original TapTap settings files aren't read. Set your messages and options again with the commands.
 
 ---

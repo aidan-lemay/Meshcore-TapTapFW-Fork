@@ -415,6 +415,12 @@ void UITask::userLedHandler() {
     return;
   }
   unsigned long now = millis();
+  if (the_mesh.getTapTap().led_flags & TAP_LED_NO_STANDBY) {   // LED only used for tones/alerts
+    if (state) digitalWrite(PIN_STATUS_LED, !LED_STATE_ON);
+    state = 0;
+    next_change = now;
+    return;
+  }
   if (now > next_change) {
     if (state == 0) {
       state = 1;

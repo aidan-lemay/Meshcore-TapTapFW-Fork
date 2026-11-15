@@ -21,6 +21,9 @@ enum TapBuzMode : uint8_t {
   TAP_BUZ_OFF   = 2,
 };
 
+// led_flags bits (a set bit turns the feature OFF, so 0 = default)
+#define TAP_LED_NO_STANDBY  0x01   // no heartbeat / messages-waiting blink when idle
+
 enum TapTargetType : uint8_t {
   TAP_TARGET_CHANNEL = 0,   // default: channel_idx (0 == Public)
   TAP_TARGET_CONTACT = 1,
@@ -37,7 +40,7 @@ struct TapTapSettings {
   uint8_t  version;
   uint8_t  buz_mode;      // TapBuzMode
   uint8_t  canned_count;
-  uint8_t  _reserved;
+  uint8_t  led_flags;     // TAP_LED_* bits; 0 = defaults (all LED features on)
   char     canned[TAPTAP_MAX_CANNED][TAPTAP_CANNED_LEN];
   char     ringtone[TAPTAP_RINGTONE_LEN];   // global message ringtone, "" = firmware default
   TapTarget target;

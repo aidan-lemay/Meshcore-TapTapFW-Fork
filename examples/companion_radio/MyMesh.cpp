@@ -2617,6 +2617,7 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "/rtttl [<rtttl>|clear]  ringtone");
     tapReply(ch_idx, contact, "/rep [on|off|<secs>]  repeat alerts until clicked");
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
+    tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
     return true;
   }
 
@@ -2726,6 +2727,27 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     if (*args) saveTapTap();
     snprintf(reply, sizeof(reply), "Repeat alerts: %s (every %us, single click to ack)",
              _taptap.repeat_alert ? "on" : "off", _taptap.repeat_gap_secs);
+    tapReply(ch_idx, contact, reply);
+    return true;
+  }
+
+  if (tapCmd(text, "/led", &args)) {
+    if (strncasecmp(args, "standby", 7) == 0 && (args[7] == ' ' || args[7] == 0)) {
+      const char* v = args + 7;
+      while (*v == ' ') v++;
+      if (strcasecmp(v, "off") == 0) _taptap.led_flags |= TAP_LED_NO_STANDBY;
+      else if (strcasecmp(v, "on") == 0) _taptap.led_flags &= ~TAP_LED_NO_STANDBY;
+      else {
+        tapReply(ch_idx, contact, "Usage: /led standby on|off");
+        return true;
+      }
+      saveTapTap();
+    } else if (*args) {
+      tapReply(ch_idx, contact, "Usage: /led [standby on|off]");
+      return true;
+    }
+    snprintf(reply, sizeof(reply), "LED standby blink: %s (alerts/tones always flash)",
+             (_taptap.led_flags & TAP_LED_NO_STANDBY) ? "off" : "on");
     tapReply(ch_idx, contact, reply);
     return true;
   }
