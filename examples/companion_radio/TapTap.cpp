@@ -223,11 +223,12 @@ int matchCanned(const char* text, const TapTapSettings& st) {
 }
 
 void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms) {
-  // beep = quarter note, gap = eighth rest; quarter note length = 60000 / bpm
+  // 1 = dash: high tone, full length (quarter note); 0 = dot: low tone, half length (eighth note).
+  // Gaps are dot length. Quarter note length = 60000 / bpm = beep_ms.
   if (beep_ms < TAPTAP_SLOT_MS_MIN || beep_ms > TAPTAP_SLOT_MS_MAX) beep_ms = TAPTAP_SLOT_MS_DEFAULT;
   int pos = snprintf(out, out_len, "TapSel:d=4,o=5,b=%d:", 60000 / beep_ms);
   for (int bit = 2; bit >= 0 && pos < (int)out_len; bit--) {
-    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "4a6" : "4f5", bit ? ",8p," : "");
+    pos += snprintf(&out[pos], out_len - pos, "%s%s", ((idx >> bit) & 1) ? "4a6" : "8f5", bit ? ",8p," : "");
   }
 }
 

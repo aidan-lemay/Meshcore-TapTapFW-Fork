@@ -74,21 +74,23 @@ There are up to **8** preset messages. The defaults are:
 
 | Slot | Pattern | Default text |
 |---|---|---|
-| 1 | `000` | All good |
-| 2 | `001` | Stop and wait |
-| 3 | `010` | Need assistance |
-| 4 | `011` | Emergency, send help |
-| 5 | `100` | Found water |
-| 6 | `101` | Returning to camp |
-| 7 | `110` | Running behind |
-| 8 | `111` | Found the point |
+| 1 | `000` · · · | All good |
+| 2 | `001` · · — | Stop and wait |
+| 3 | `010` · — · | Need assistance |
+| 4 | `011` · — — | Emergency, send help |
+| 5 | `100` — · · | Found water |
+| 6 | `101` — · — | Returning to camp |
+| 7 | `110` — — · | Running behind |
+| 8 | `111` — — — | Found the point |
 
 1. **2 clicks** to enter canned mode (rising three-note chirp).
 2. **1 click** steps to the next message. The device beeps the slot number as 3 binary digits:
-   **high beep = 1, low beep = 0**. So slot 1 is low-low-low (`000`) and slot 6 is high-low-high (`101`).
-   Each beep (and LED flash) lasts **0.5 s** with 0.25 s gaps, so a pattern takes 2 s
-   (change with `/slot`).
-   The LED flashes are all the same length, so when muted you can count the beeps but not tell 1s from 0s.
+   - **1 = dash**: high beep, long flash (0.5 s)
+   - **0 = dot**: low beep, short flash (0.25 s)
+
+   So slot 1 is dot-dot-dot (`000`) and slot 6 is dash-dot-dash (`101`). Because the lengths differ,
+   you can read the pattern from the LED alone when muted. Gaps are dot length. `/slot <ms>` sets the dash
+   length; the dot and gaps are always half of it.
 3. **Hold 1.2 s** to send it to the [tap target](#commands). A rising "sent" tune means it was sent.
    A double low buzz means it failed (for example, no tap target set).
 
@@ -159,8 +161,8 @@ chat from **"System"**. Anything starting with `/` that isn't listed here is sen
 | `/play <rtttl>` | Play a melody on the device now (handy for trying ringtones) |
 | `/cw` | Show the CW alert speed |
 | `/cw <wpm>` | Set the CW alert speed, 1–40 words per minute (dit = 1200 / wpm ms: 19 → 63 ms, 12 → 100 ms, 2 → 600 ms) |
-| `/slot` | Show the slot pattern beep length |
-| `/slot <ms>` | Set the slot pattern beep length, 50–2000 ms (gap is half that). Used both when picking a canned message and when an incoming message matches one. Default 500 |
+| `/slot` | Show the slot pattern timing |
+| `/slot <ms>` | Set the slot pattern **dash** length, 50–2000 ms. Dots and gaps are half that. Used both when picking a canned message and when an incoming message matches one. Default 500 |
 | `/led` | Show LED settings |
 | `/led standby on\|off` | Turn the idle heartbeat / messages-waiting blink on or off. When off, the LED **only** lights for tones, alerts and Morse keying, so it's never confused with a message |
 
@@ -180,7 +182,7 @@ All of these settings are saved on the device and survive reboots.
 | Enter canned mode | quick rising chirp |
 | Leave canned / Morse mode | quick falling chirp |
 | Enter Morse mode | two short high beeps |
-| Slot selected | 3-bit pattern (high = 1, low = 0), 0.5 s per beep by default (`/slot`) |
+| Slot selected | 3-bit pattern: 1 = high dash (0.5 s), 0 = low dot (0.25 s) by default (`/slot`) |
 | Message sent | rising "sent" tune |
 | Error / failed | double low buzz |
 | Morse letter deleted | single low blip |

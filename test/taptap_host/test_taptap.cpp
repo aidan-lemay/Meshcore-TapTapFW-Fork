@@ -38,7 +38,7 @@ static void test_taptap_and_player() {
   { taptap::buildCwRtttl("sos hi", buf, sizeof buf); assert(strcmp(buf,"CW:d=8,o=6,b=475:a,p,a,p,a,4p.,4a.,p,4a.,p,4a.,4p.,a,p,a,p,a,2p.,p,a,p,a,p,a,p,a,4p.,a,p,a")==0);
     g_ms=5000; p.play(buf); int steps=0; while(p.isPlaying()){ g_ms+=1; p.loop(); steps++; } printf("sos hi plays %d ms\n", steps); }
   
-  // slot pattern: 500ms beeps, 250ms gaps -> 3*500 + 2*250 = 2000ms, LED on for each beep
+  // slot 101 at 500ms: dash 500, gap 250, dot 250, gap 250, dash 500 = 1750ms, lit 1250ms
   {
     TapPlayer q; q.begin(25, 37, 24, true);
     taptap::buildIndexTone(5, r, sizeof r);        // 101
@@ -46,13 +46,15 @@ static void test_taptap_and_player() {
     int on_ms = 0, total = 0;
     while (q.isPlaying()) { if (g_led) on_ms++; g_ms++; q.loop(); total++; }
     printf("slot tone: total %dms, lit %dms\n", total, on_ms);
-    assert(total == 2000 && on_ms == 1500);
+    assert(total == 1750 && on_ms == 1250);
   }
-  // slot speed is independent: 200ms beeps -> 3*200 + 2*100 = 800ms; CW speed setting doesn't affect it
+  // slot 000 at 200ms: three 100ms dots + two 100ms gaps = 500ms; CW speed setting doesn't affect it
   {
     TapPlayer q; q.begin(25, 37, 24, true);
     taptap::buildIndexTone(0, r, sizeof r, 200); g_ms = 25000; q.play(r);
-    int t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("slot 200ms: %dms\n", t); assert(t == 800);
+    int t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } printf("slot 200ms: %dms\n", t); assert(t == 500);
+    taptap::buildIndexTone(7, r, sizeof r, 200); g_ms = 26000; q.play(r);   // 111: 3*200 + 2*100 = 800ms
+    t = 0; while (q.isPlaying()) { g_ms++; q.loop(); t++; } assert(t == 800);
     taptap::buildIndexTone(0, r, sizeof r, 9999); assert(strstr(r, "b=120:"));   // out of range -> 500ms default
   }
   // CW speed: 12 wpm -> 100ms dit; 2 wpm -> 600ms dit

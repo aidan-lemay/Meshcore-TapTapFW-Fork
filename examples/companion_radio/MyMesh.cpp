@@ -2622,7 +2622,7 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
     tapReply(ch_idx, contact, "/play <rtttl>  play on device");
     tapReply(ch_idx, contact, "/led [standby on|off]  idle LED blink");
     tapReply(ch_idx, contact, "/cw [<wpm>]  spelled-out CW alert speed");
-    tapReply(ch_idx, contact, "/slot [<ms>]  slot pattern beep length");
+    tapReply(ch_idx, contact, "/slot [<ms>]  slot pattern dash length");
     return true;
   }
 
@@ -2764,7 +2764,8 @@ bool MyMesh::handleTapCommand(const char* text, int ch_idx, const ContactInfo* c
       _taptap.slot_beep_ms = ms;
       saveTapTap();
     }
-    snprintf(reply, sizeof(reply), "Slot pattern: %ums beeps, %ums gaps", _taptap.slot_beep_ms, _taptap.slot_beep_ms / 2);
+    snprintf(reply, sizeof(reply), "Slot pattern: 1 = %ums dash, 0 = %ums dot, %ums gaps",
+             _taptap.slot_beep_ms, _taptap.slot_beep_ms / 2, _taptap.slot_beep_ms / 2);
     tapReply(ch_idx, contact, reply);
     return true;
   }

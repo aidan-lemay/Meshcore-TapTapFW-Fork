@@ -90,7 +90,7 @@ namespace taptap {
   // Index of the canned slot whose text equals 'text' (case-insensitive, trimmed), or -1.
   int matchCanned(const char* text, const TapTapSettings& st);
 
-  // Melody that plays 3-bit binary of 'idx' (high tone = 1, low tone = 0), each beep 'beep_ms'
-  // long with a beep_ms/2 gap. 'out' >= 64 bytes.
+  // Melody that plays 3-bit binary of 'idx': 1 = dash (high tone, beep_ms long),
+  // 0 = dot (low tone, beep_ms/2), gaps beep_ms/2. 'out' >= 64 bytes.
   void buildIndexTone(int idx, char* out, size_t out_len, int beep_ms = TAPTAP_SLOT_MS_DEFAULT);
 }
